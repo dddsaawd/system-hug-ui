@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import Index from "./pages/Index";
+import EngineControl from "./pages/EngineControl";
 import Checkouts from "./pages/Checkouts";
 import Retries from "./pages/Retries";
 import ApiSettings from "./pages/ApiSettings";
@@ -22,6 +23,7 @@ const App = () => (
         <DashboardLayout>
           <Routes>
             <Route path="/" element={<Index />} />
+            <Route path="/engine" element={<EngineControl />} />
             <Route path="/checkouts" element={<Checkouts />} />
             <Route path="/retries" element={<Retries />} />
             <Route path="/settings" element={<ApiSettings />} />

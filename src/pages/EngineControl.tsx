@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { MetricCard } from "@/components/MetricCard";
+import { FileUploadButton } from "@/components/FileUploadButton";
 import { toast } from "sonner";
 import {
   startEngine,
@@ -216,7 +217,14 @@ export default function EngineControl() {
             </div>
 
             <div className="space-y-2">
-              <Label>Proxies * (um por linha)</Label>
+              <div className="flex items-center justify-between">
+                <Label>Proxies * (um por linha)</Label>
+                <FileUploadButton
+                  label="Carregar proxies.txt"
+                  disabled={isRunning}
+                  onFileLoaded={(content) => setProxiesText(content.trim())}
+                />
+              </div>
               <Textarea
                 value={proxiesText}
                 onChange={(e) => setProxiesText(e.target.value)}
@@ -225,11 +233,21 @@ export default function EngineControl() {
                 className="font-mono text-xs"
                 disabled={isRunning}
               />
-              <p className="text-xs text-muted-foreground">Proxies são rotacionados automaticamente a cada sessão.</p>
+              <p className="text-xs text-muted-foreground">
+                Proxies são rotacionados automaticamente a cada sessão.
+                {proxiesText && ` (${proxiesText.split("\n").filter(Boolean).length} carregados)`}
+              </p>
             </div>
 
             <div className="space-y-2">
-              <Label>CPFs (opcional, um por linha)</Label>
+              <div className="flex items-center justify-between">
+                <Label>CPFs (opcional, um por linha)</Label>
+                <FileUploadButton
+                  label="Carregar cpfs.txt"
+                  disabled={isRunning}
+                  onFileLoaded={(content) => setCpfsText(content.trim())}
+                />
+              </div>
               <Textarea
                 value={cpfsText}
                 onChange={(e) => setCpfsText(e.target.value)}
@@ -238,7 +256,10 @@ export default function EngineControl() {
                 className="font-mono text-xs"
                 disabled={isRunning}
               />
-              <p className="text-xs text-muted-foreground">Se vazio, o motor usará o arquivo <code className="text-primary">cpfs.txt</code> do servidor.</p>
+              <p className="text-xs text-muted-foreground">
+                Se vazio, o motor usará o arquivo <code className="text-primary">cpfs.txt</code> do servidor.
+                {cpfsText && ` (${cpfsText.split("\n").filter(Boolean).length} carregados)`}
+              </p>
             </div>
 
             <div className="flex flex-wrap gap-6 items-end">

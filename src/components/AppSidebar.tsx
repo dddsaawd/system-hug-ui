@@ -4,8 +4,8 @@ import {
   RotateCcw,
   Settings,
   BarChart3,
-  Zap,
-  Rocket } from
+  Rocket,
+  ShieldBan } from
 "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -42,7 +42,7 @@ export function AppSidebar() {
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-            <Zap className="h-4 w-4 text-primary-foreground" />
+            <ShieldBan className="h-4 w-4 text-primary-foreground" />
           </div>
           {!collapsed &&
           <span className="text-lg font-bold tracking-tight text-foreground">

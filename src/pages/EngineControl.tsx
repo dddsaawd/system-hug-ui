@@ -27,6 +27,7 @@ export default function EngineControl() {
   const [cpfsText, setCpfsText] = useState("");
   const [intervalSec, setIntervalSec] = useState(120);
   const [headless, setHeadless] = useState(true);
+  const [rotateAfter, setRotateAfter] = useState(1);
 
   const [sessionId, setSessionId] = useState<string | null>(
     () => localStorage.getItem("phantom_session_id")
@@ -102,6 +103,7 @@ export default function EngineControl() {
       proxies,
       interval_seconds: intervalSec,
       headless,
+      rotate_after_successes: rotateAfter,
       ...(cpfs.length > 0 ? { cpfs } : {}),
     };
 
@@ -274,6 +276,19 @@ export default function EngineControl() {
                   max={3600}
                   disabled={isRunning}
                 />
+              </div>
+              <div className="space-y-2">
+                <Label>Girar proxy a cada X sucessos</Label>
+                <Input
+                  type="number"
+                  value={rotateAfter}
+                  onChange={(e) => setRotateAfter(Number(e.target.value))}
+                  className="w-36"
+                  min={1}
+                  max={100}
+                  disabled={isRunning}
+                />
+                <p className="text-xs text-muted-foreground">Troca de proxy após N pedidos com sucesso.</p>
               </div>
               <div className="flex items-center gap-3 pb-1">
                 <Switch

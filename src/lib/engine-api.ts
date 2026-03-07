@@ -7,6 +7,7 @@ export const startEngineSchema = z.object({
   interval_seconds: z.number().min(1).max(3600).default(120),
   cpfs: z.array(z.string().trim()).optional(),
   headless: z.boolean().default(true),
+  rotate_after_successes: z.number().min(1).max(100).default(1),
 });
 
 export type StartEnginePayload = z.infer<typeof startEngineSchema>;

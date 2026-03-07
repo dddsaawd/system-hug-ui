@@ -78,7 +78,7 @@ export function AppSidebar() {
       <SidebarFooter className="p-4">
         {!collapsed &&
         <div className="rounded-lg border border-border bg-muted/50 p-3">
-            <p className="text-xs text-muted-foreground">PHANTOM ENGINE v2.1</p>
+            <p className="text-xs text-muted-foreground">PHANTOM ENGINE v3.0</p>
             <div className="mt-1 flex items-center gap-1.5">
               <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
               <span className="text-xs font-medium text-foreground">Online</span>

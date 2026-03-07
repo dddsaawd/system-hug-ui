@@ -5,8 +5,8 @@ export const startEngineSchema = z.object({
   target_url: z.string().trim().url({ message: "URL inválida" }).max(2048, { message: "URL muito longa" }),
   proxies: z.array(z.string().trim().min(1)).min(1, { message: "Adicione pelo menos 1 proxy" }),
   interval_seconds: z.number().min(1).max(3600).default(120),
-  max_retries: z.number().min(1).max(100).default(5),
   cpfs: z.array(z.string().trim()).optional(),
+  headless: z.boolean().default(true),
 });
 
 export type StartEnginePayload = z.infer<typeof startEngineSchema>;

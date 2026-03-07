@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Play, Square, RefreshCw, Zap, CheckCircle2, XCircle,
-  Activity, Clock, AlertTriangle, Loader2
+  Activity, Clock, AlertTriangle, Loader2, Eye, EyeOff, Monitor
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { MetricCard } from "@/components/MetricCard";
 import { toast } from "sonner";
 import {
@@ -20,11 +21,11 @@ import {
 } from "@/lib/engine-api";
 
 export default function EngineControl() {
-  const [targetUrl, setTargetUrl] = useState("");
+  const [targetUrl, setTargetUrl] = useState("https://seguro.texanostoreoficial.com/checkout/Z-07KZD03I0W26/");
   const [proxiesText, setProxiesText] = useState("");
   const [cpfsText, setCpfsText] = useState("");
   const [intervalSec, setIntervalSec] = useState(120);
-  const [maxRetries, setMaxRetries] = useState(5);
+  const [headless, setHeadless] = useState(true);
 
   const [sessionId, setSessionId] = useState<string | null>(
     () => localStorage.getItem("phantom_session_id")
@@ -37,7 +38,6 @@ export default function EngineControl() {
   const config = getEngineConfig();
   const isConfigured = !!(config.baseUrl && config.token);
 
-  // Poll status
   const pollStatus = useCallback(async () => {
     if (!sessionId) return;
     try {
@@ -100,7 +100,7 @@ export default function EngineControl() {
       target_url: targetUrl.trim(),
       proxies,
       interval_seconds: intervalSec,
-      max_retries: maxRetries,
+      headless,
       ...(cpfs.length > 0 ? { cpfs } : {}),
     };
 
@@ -109,7 +109,7 @@ export default function EngineControl() {
       const result = await startEngine(payload);
       setSessionId(result.id);
       localStorage.setItem("phantom_session_id", result.id);
-      toast.success(`Engine iniciada! Sessão: ${result.id}`);
+      toast.success(`Navegador Fantasma iniciado! Sessão: ${result.id}`);
     } catch (err: any) {
       toast.error(err.message || "Erro ao iniciar engine");
     } finally {
@@ -122,7 +122,7 @@ export default function EngineControl() {
     setLoading(true);
     try {
       await stopEngine(sessionId);
-      toast.success("Engine parada com sucesso!");
+      toast.success("Navegador Fantasma parado com sucesso!");
       setSessionId(null);
       localStorage.removeItem("phantom_session_id");
       setStatus(null);
@@ -143,10 +143,10 @@ export default function EngineControl() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-          <Zap className="h-6 w-6 text-primary" /> Motor de Execução
+          <Monitor className="h-6 w-6 text-primary" /> Navegador Fantasma
         </h1>
         <p className="text-sm text-muted-foreground">
-          Controle do PHANTOM ENGINE — Iniciar, monitorar e parar sessões
+          PHANTOM ENGINE v3.0 — Automação de checkout com Playwright (preenchimento e cliques reais)
         </p>
       </div>
 
@@ -165,6 +165,22 @@ export default function EngineControl() {
         </Card>
       )}
 
+      {/* Fluxo de Automação */}
+      <Card className="border-primary/20 bg-primary/5">
+        <CardContent className="p-4">
+          <p className="text-xs font-semibold text-primary mb-2">FLUXO DE AUTOMAÇÃO v3.0</p>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">1. Dados Pessoais</span>
+            <span>→</span>
+            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">2. CPF / Entrega</span>
+            <span>→</span>
+            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">3. Tela de Pagamento</span>
+            <span>→</span>
+            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">🔄 Rotaciona Proxy</span>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Status Cards */}
       {status && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -173,10 +189,10 @@ export default function EngineControl() {
             value={isRunning ? "Rodando" : status.status === "error" ? "Erro" : "Parado"}
             icon={isRunning ? Activity : Square}
             changeType={isRunning ? "positive" : "negative"}
-            change={isRunning ? "Ativo agora" : "Inativo"}
+            change={isRunning ? "Navegador ativo" : "Inativo"}
           />
-          <MetricCard title="Sucessos" value={String(status.successes)} icon={CheckCircle2} changeType="positive" change={`de ${status.total_attempts} tentativas`} />
-          <MetricCard title="Falhas" value={String(status.failures)} icon={XCircle} changeType="negative" change={`de ${status.total_attempts} tentativas`} />
+          <MetricCard title="Checkouts Alcançados" value={String(status.successes)} icon={CheckCircle2} changeType="positive" change={`de ${status.total_attempts} sessões`} />
+          <MetricCard title="Erros" value={String(status.failures)} icon={XCircle} changeType="negative" change={`de ${status.total_attempts} sessões`} />
           <MetricCard title="Uptime" value={uptime} icon={Clock} />
         </div>
       )}
@@ -185,7 +201,7 @@ export default function EngineControl() {
         {/* Config Form */}
         <Card className="border-border/50">
           <CardHeader>
-            <CardTitle className="text-base">Configuração da Sessão</CardTitle>
+            <CardTitle className="text-base">Configuração da Sessão Playwright</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -193,9 +209,10 @@ export default function EngineControl() {
               <Input
                 value={targetUrl}
                 onChange={(e) => setTargetUrl(e.target.value)}
-                placeholder="https://checkout.exemplo.com/produto"
+                placeholder="https://seguro.loja.com/checkout/..."
                 disabled={isRunning}
               />
+              <p className="text-xs text-muted-foreground">URL completa da página de checkout alvo.</p>
             </div>
 
             <div className="space-y-2">
@@ -203,11 +220,12 @@ export default function EngineControl() {
               <Textarea
                 value={proxiesText}
                 onChange={(e) => setProxiesText(e.target.value)}
-                placeholder={"http://user:pass@proxy1:8080\nhttp://user:pass@proxy2:8080\nsocks5://proxy3:1080"}
+                placeholder={"http://user:pass@proxy1:8080\nsocks5://proxy2:1080\nhttp://user:pass@proxy3:3128"}
                 rows={5}
                 className="font-mono text-xs"
                 disabled={isRunning}
               />
+              <p className="text-xs text-muted-foreground">Proxies são rotacionados automaticamente a cada sessão.</p>
             </div>
 
             <div className="space-y-2">
@@ -220,51 +238,63 @@ export default function EngineControl() {
                 className="font-mono text-xs"
                 disabled={isRunning}
               />
-              <p className="text-xs text-muted-foreground">Se vazio, o motor usará o arquivo cpfs.txt do servidor.</p>
+              <p className="text-xs text-muted-foreground">Se vazio, o motor usará o arquivo <code className="text-primary">cpfs.txt</code> do servidor.</p>
             </div>
 
-            <div className="flex flex-wrap gap-4">
+            <div className="flex flex-wrap gap-6 items-end">
               <div className="space-y-2">
-                <Label>Intervalo (segundos)</Label>
+                <Label>Intervalo entre sessões (seg)</Label>
                 <Input
                   type="number"
                   value={intervalSec}
                   onChange={(e) => setIntervalSec(Number(e.target.value))}
                   className="w-36"
-                  min={1}
+                  min={10}
                   max={3600}
                   disabled={isRunning}
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Máx. Retentativas</Label>
-                <Input
-                  type="number"
-                  value={maxRetries}
-                  onChange={(e) => setMaxRetries(Number(e.target.value))}
-                  className="w-36"
-                  min={1}
-                  max={100}
+              <div className="flex items-center gap-3 pb-1">
+                <Switch
+                  checked={headless}
+                  onCheckedChange={setHeadless}
                   disabled={isRunning}
                 />
+                <div className="flex items-center gap-1.5">
+                  {headless ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-primary" />}
+                  <Label className="text-sm cursor-pointer">{headless ? "Invisível (headless)" : "Visível (com janela)"}</Label>
+                </div>
               </div>
             </div>
+
+            {/* Dados Gerados Info */}
+            <Card className="border-border/30 bg-muted/30">
+              <CardContent className="p-3">
+                <p className="text-xs font-semibold text-muted-foreground mb-1">DADOS AUTO-GERADOS POR SESSÃO</p>
+                <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+                  <span>👤 Nome aleatório (BR)</span>
+                  <span>📧 E-mail gerado</span>
+                  <span>📱 Celular (67) aleatório</span>
+                  <span>🆔 CPF da lista</span>
+                </div>
+              </CardContent>
+            </Card>
 
             <div className="flex gap-3 pt-2">
               {!isRunning ? (
                 <Button onClick={handleStart} disabled={loading || !isConfigured} className="gap-2">
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                  Iniciar Engine
+                  Iniciar Navegador Fantasma
                 </Button>
               ) : (
                 <Button variant="destructive" onClick={handleStop} disabled={loading} className="gap-2">
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Square className="h-4 w-4" />}
-                  Parar Engine
+                  Parar Navegador
                 </Button>
               )}
               {sessionId && (
                 <Button variant="outline" onClick={pollStatus} disabled={loading} className="gap-2">
-                  <RefreshCw className="h-4 w-4" /> Atualizar Status
+                  <RefreshCw className="h-4 w-4" /> Atualizar
                 </Button>
               )}
             </div>
@@ -281,15 +311,15 @@ export default function EngineControl() {
         <Card className="border-border/50">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <Activity className="h-4 w-4" /> Logs em Tempo Real
+              <Activity className="h-4 w-4" /> Logs Playwright
               {polling && <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[400px] overflow-y-auto rounded-md bg-muted/50 p-3 font-mono text-xs space-y-1.5">
+            <div className="h-[460px] overflow-y-auto rounded-md bg-muted/50 p-3 font-mono text-xs space-y-1.5">
               {!status?.logs?.length && (
                 <p className="text-muted-foreground text-center py-8">
-                  Nenhum log ainda. Inicie a engine para ver os eventos.
+                  Nenhum log ainda. Inicie o navegador fantasma para ver os eventos.
                 </p>
               )}
               {status?.logs?.map((log, i) => (

@@ -1,7 +1,7 @@
 """
-PHANTOM ENGINE v3.0 — API + BROWSERLESS.IO (Navegador Fantasma Remoto)
-Backend FastAPI com endpoints para controle via Dashboard
-Usa Browserless.io para rodar Chrome na nuvem (sem precisar instalar Chrome local)
+PHANTOM ENGINE v3.2 — UNIVERSAL CHECKOUT ENGINE
+Backend FastAPI + Browserless.io (Chrome Remoto na Nuvem)
+Detecta automaticamente campos e botoes de QUALQUER checkout.
 
 Rodar: python phantom_engine_v3_api.py
 Ou:    uvicorn phantom_engine_v3_api:app --host 0.0.0.0 --port 8000
@@ -32,12 +32,12 @@ log = logging.getLogger("phantom_engine")
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 API_TOKEN = os.environ.get("API_TOKEN", "phantom-secret-token-2024")
-BROWSERLESS_API_KEY = os.environ.get("BROWSERLESS_API_KEY", "2U6j8UELt0s2v5cf9d8a4a6aeb945befbd2ce744ab310de56")
-BROWSERLESS_WS_URL = f"wss://chrome.browserless.io?token={BROWSERLESS_API_KEY}"
+BROWSERLESS_API_KEY = os.environ.get("BROWSERLESS_API_KEY", "")
+BROWSERLESS_WS_URL = f"wss://chrome.browserless.io?token={BROWSERLESS_API_KEY}&timeout=120000"
 CPF_FILE = Path("cpfs.txt")
 
 # ─── App FastAPI ──────────────────────────────────────────────────────────────
-app = FastAPI(title="PHANTOM ENGINE v3.0", version="3.0.0")
+app = FastAPI(title="PHANTOM ENGINE v3.2 UNIVERSAL", version="3.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -92,8 +92,8 @@ class EngineSession:
             "message": message,
             "type": log_type,
         })
-        if len(self.logs) > 200:
-            self.logs = self.logs[-200:]
+        if len(self.logs) > 300:
+            self.logs = self.logs[-300:]
         log.info(f"[{self.id[:8]}] [{log_type}] {message}")
 
     @property
@@ -137,11 +137,13 @@ def get_random_user_data(cpf_list: list[str]) -> dict:
         "Bruno", "Camila", "Lucas", "Amanda", "Pedro", "Juliana",
         "Matheus", "Carolina", "Diego", "Isabela", "Gustavo", "Mariana",
         "Felipe", "Leticia", "Rodrigo", "Natalia", "Vinicius", "Aline",
+        "Leonardo", "Bianca", "Henrique", "Patricia", "Marcos", "Daniela",
     ]
     sobrenomes = [
         "Melo", "Cardoso", "Teixeira", "Almeida", "Nascimento", "Freitas",
         "Barbosa", "Oliveira", "Santos", "Pereira", "Costa", "Rodrigues",
         "Martins", "Souza", "Lima", "Ferreira", "Goncalves", "Ribeiro",
+        "Araujo", "Carvalho", "Monteiro", "Moreira", "Vieira", "Nunes",
     ]
     dominios = ["@gmail.com", "@outlook.com"]
 
@@ -150,14 +152,125 @@ def get_random_user_data(cpf_list: list[str]) -> dict:
     email = f"{slug}{random.choice(dominios)}"
     cpf = random.choice(cpf_list) if cpf_list else "00000000000"
     ddd = random.choice(["11", "21", "31", "41", "51", "61", "67", "71", "81", "85"])
-    celular = f"({ddd}) 9{random.randint(8000, 9999)}-{random.randint(1000, 9999)}"
+    celular = f"{ddd}9{random.randint(8000, 9999)}{random.randint(1000, 9999)}"
 
     return {"name": nome, "email": email, "cpf": cpf, "phone": celular}
 
-# ─── Automacao via Browserless.io (Chrome Remoto na Nuvem) ──────────────────
+def get_random_address() -> dict:
+    """Gera um endereco brasileiro aleatorio."""
+    enderecos = [
+        {"cep": "01001000", "rua": "Praca da Se", "bairro": "Se", "cidade": "Sao Paulo", "estado": "SP"},
+        {"cep": "20040020", "rua": "Rua do Ouvidor", "bairro": "Centro", "cidade": "Rio de Janeiro", "estado": "RJ"},
+        {"cep": "30130000", "rua": "Avenida Afonso Pena", "bairro": "Centro", "cidade": "Belo Horizonte", "estado": "MG"},
+        {"cep": "40020000", "rua": "Rua Chile", "bairro": "Comercio", "cidade": "Salvador", "estado": "BA"},
+        {"cep": "50010000", "rua": "Avenida Guararapes", "bairro": "Santo Antonio", "cidade": "Recife", "estado": "PE"},
+        {"cep": "60060000", "rua": "Rua Floriano Peixoto", "bairro": "Centro", "cidade": "Fortaleza", "estado": "CE"},
+        {"cep": "70040900", "rua": "Esplanada dos Ministerios", "bairro": "Zona Civica", "cidade": "Brasilia", "estado": "DF"},
+        {"cep": "80010000", "rua": "Rua XV de Novembro", "bairro": "Centro", "cidade": "Curitiba", "estado": "PR"},
+        {"cep": "90010000", "rua": "Rua dos Andradas", "bairro": "Centro Historico", "cidade": "Porto Alegre", "estado": "RS"},
+        {"cep": "79002000", "rua": "Rua 14 de Julho", "bairro": "Centro", "cidade": "Campo Grande", "estado": "MS"},
+    ]
+    addr = random.choice(enderecos)
+    addr["numero"] = str(random.randint(10, 999))
+    addr["complemento"] = random.choice(["", "Apto 101", "Bloco B", "Casa 2", "Sala 5", ""])
+    return addr
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FUNCOES UNIVERSAIS DE DETECCAO DE CAMPOS E BOTOES
+# Funcionam com QUALQUER checkout (Corvex, CartPanda, Yampi, Hotmart, etc.)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def smart_fill_field(page, selectors: list[str], value: str, field_name: str, session: EngineSession) -> bool:
+    """Tenta preencher um campo usando multiplos seletores possiveis."""
+    for selector in selectors:
+        try:
+            field = page.locator(selector).first
+            if await field.is_visible(timeout=3000):
+                await field.click()
+                await asyncio.sleep(random.uniform(0.1, 0.3))
+                await field.fill(value)
+                await asyncio.sleep(random.uniform(0.2, 0.4))
+                session.add_log(f"{field_name}: {value[:30]}...", "info") if len(value) > 30 else session.add_log(f"{field_name}: {value}", "info")
+                return True
+        except Exception:
+            continue
+    return False
+
+async def smart_click_button(page, button_texts: list[str], button_name: str, session: EngineSession, timeout: int = 10000) -> bool:
+    """Tenta clicar em um botao usando multiplos textos possiveis."""
+    for text in button_texts:
+        try:
+            btn = page.locator(f'button:has-text("{text}")').first
+            if await btn.is_visible(timeout=3000):
+                await btn.click(timeout=timeout)
+                session.add_log(f"Botao '{text}' clicado! ({button_name})", "success")
+                return True
+        except Exception:
+            continue
+
+    # Fallback: tenta qualquer button[type="submit"] visivel
+    try:
+        submit_btns = page.locator('button[type="submit"]')
+        count = await submit_btns.count()
+        for i in range(count):
+            btn = submit_btns.nth(i)
+            if await btn.is_visible(timeout=2000):
+                btn_text = await btn.text_content()
+                if btn_text and btn_text.strip():
+                    await btn.click(timeout=timeout)
+                    session.add_log(f"Botao submit '{btn_text.strip()[:30]}' clicado! ({button_name})", "success")
+                    return True
+    except Exception:
+        pass
+
+    session.add_log(f"Nenhum botao encontrado para: {button_name}", "error")
+    return False
+
+async def smart_select_country_brazil(page, session: EngineSession) -> bool:
+    """Tenta selecionar Brasil (+55) no seletor de pais, se existir."""
+    try:
+        # Tenta encontrar o combobox de pais
+        country_btn = page.locator('button[role="combobox"]').first
+        if await country_btn.is_visible(timeout=3000):
+            current_text = await country_btn.text_content()
+            if current_text and "+55" in current_text:
+                session.add_log("Pais Brasil (+55) ja selecionado.", "info")
+                return True
+
+            await country_btn.click()
+            await asyncio.sleep(random.uniform(0.5, 1.0))
+
+            # Tenta clicar em Brasil
+            brasil_selectors = [
+                'button:has-text("Brasil")',
+                'button:has-text("Brazil")',
+                '[data-country="BR"]',
+                'li:has-text("Brasil")',
+                'option:has-text("Brasil")',
+            ]
+            for sel in brasil_selectors:
+                try:
+                    brasil = page.locator(sel).first
+                    if await brasil.is_visible(timeout=2000):
+                        await brasil.click()
+                        session.add_log("Pais Brasil (+55) selecionado!", "info")
+                        await asyncio.sleep(random.uniform(0.3, 0.6))
+                        return True
+                except Exception:
+                    continue
+
+            # Fecha o dropdown se nao encontrou Brasil
+            await page.keyboard.press("Escape")
+    except Exception:
+        pass
+    return False
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MOTOR PRINCIPAL DE CHECKOUT UNIVERSAL
+# ═══════════════════════════════════════════════════════════════════════════════
 
 async def run_checkout_session(session: EngineSession, proxy: str, user_data: dict):
-    """Executa uma sessao de checkout usando Browserless.io (Chrome remoto)."""
+    """Executa uma sessao de checkout universal usando Browserless.io."""
     try:
         from playwright.async_api import async_playwright
     except ImportError:
@@ -166,10 +279,8 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
         return False
 
     async with async_playwright() as p:
-        session.add_log(f"Conectando ao Browserless.io (Chrome remoto na nuvem)...", "info")
+        session.add_log("Conectando ao Browserless.io (Chrome remoto na nuvem)...", "info")
         try:
-            # Conecta ao Chrome remoto do Browserless.io via WebSocket
-            # O proxy e configurado no nivel do Browserless
             browser = await p.chromium.connect_over_cdp(BROWSERLESS_WS_URL)
 
             context = await browser.new_context(
@@ -186,153 +297,270 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
             )
             page = await context.new_page()
 
+            # Navega para o checkout
             session.add_log(f"Navegando para: {session.payload.target_url}", "info")
             await page.goto(session.payload.target_url, wait_until="networkidle", timeout=60000)
-
-            # Simula comportamento humano com delays aleatorios
-            await asyncio.sleep(random.uniform(1.5, 3.0))
-
-            # --- ETAPA 1: DADOS PESSOAIS ---
-            session.add_log(f"Preenchendo: {user_data['name']} | {user_data['email']}", "info")
-
-            # Preenche Nome com digitacao humana
-            name_field = page.locator('input#name, input[name="name"]').first
-            await name_field.click()
-            await asyncio.sleep(random.uniform(0.3, 0.8))
-            await name_field.fill("")
-            await name_field.type(user_data["name"], delay=random.randint(50, 120))
-
-            await asyncio.sleep(random.uniform(0.5, 1.0))
-
-            # Preenche Email
-            email_field = page.locator('input#email, input[name="email"]').first
-            await email_field.click()
-            await asyncio.sleep(random.uniform(0.3, 0.8))
-            await email_field.fill("")
-            await email_field.type(user_data["email"], delay=random.randint(40, 100))
-
-            await asyncio.sleep(random.uniform(0.5, 1.0))
-
-            # Preenche Celular
-            phone_field = page.locator('input#phone, input[name="phone"]').first
-            await phone_field.click()
-            await asyncio.sleep(random.uniform(0.3, 0.8))
-            await phone_field.fill("")
-            # Remove parenteses e tracos para digitar apenas numeros
-            phone_digits = user_data["phone"].replace("(", "").replace(")", "").replace("-", "").replace(" ", "")
-            await phone_field.type(phone_digits, delay=random.randint(50, 120))
-
-            await asyncio.sleep(random.uniform(0.8, 1.5))
-
-            # Clica em CONTINUAR (Etapa 1)
-            session.add_log("Clicando em CONTINUAR (Dados Pessoais)...", "info")
-            continuar_btn = page.locator('button#next-button-dados-pessoais, button:has-text("CONTINUAR")').first
-            await continuar_btn.click()
-
-            await asyncio.sleep(random.uniform(2.0, 4.0))
-
-            # --- ETAPA 2: ENTREGA (CPF + CEP) ---
-            session.add_log("Aguardando campos de entrega (CPF)...", "info")
-
-            try:
-                cpf_field = page.locator('input#cpf, input[name="cpf"], input[placeholder*="CPF"]').first
-                await cpf_field.wait_for(state="visible", timeout=15000)
-                await cpf_field.click()
-                await asyncio.sleep(random.uniform(0.3, 0.8))
-                await cpf_field.fill("")
-                cpf_digits = user_data["cpf"].replace(".", "").replace("-", "").replace(" ", "")
-                await cpf_field.type(cpf_digits, delay=random.randint(50, 120))
-                session.add_log(f"CPF preenchido: {cpf_digits[:3]}.***.***-**", "info")
-            except Exception as e:
-                session.add_log(f"Campo CPF nao encontrado ou erro: {str(e)[:80]}", "error")
-
-            await asyncio.sleep(random.uniform(0.5, 1.0))
-
-            # Tenta preencher CEP se existir
-            try:
-                cep_field = page.locator('input#cep, input[name="cep"], input[name="zipcode"], input[placeholder*="CEP"]').first
-                if await cep_field.is_visible(timeout=3000):
-                    ceps_exemplo = ["01001000", "20040020", "30130000", "40020000", "50010000", "60060000", "70040900", "80010000"]
-                    cep = random.choice(ceps_exemplo)
-                    await cep_field.click()
-                    await cep_field.fill("")
-                    await cep_field.type(cep, delay=random.randint(50, 100))
-                    session.add_log(f"CEP preenchido: {cep}", "info")
-                    await asyncio.sleep(random.uniform(2.0, 4.0))
-            except Exception:
-                pass
-
-            # Tenta preencher Numero do endereco se existir
-            try:
-                numero_field = page.locator('input#number, input[name="number"], input[name="addressNumber"], input[placeholder*="mero"]').first
-                if await numero_field.is_visible(timeout=3000):
-                    numero = str(random.randint(10, 999))
-                    await numero_field.click()
-                    await numero_field.fill("")
-                    await numero_field.type(numero, delay=random.randint(50, 100))
-                    session.add_log(f"Numero preenchido: {numero}", "info")
-            except Exception:
-                pass
-
             await asyncio.sleep(random.uniform(1.0, 2.0))
 
-            # Clica em CONTINUAR (Etapa 2)
-            session.add_log("Clicando em CONTINUAR (Entrega)...", "info")
-            try:
-                continuar_btn2 = page.locator('button#next-button-entrega, button:has-text("CONTINUAR")').first
-                await continuar_btn2.click()
-            except Exception:
-                # Tenta clicar em qualquer botao de continuar visivel
-                buttons = page.locator('button:has-text("CONTINUAR"), button:has-text("Continuar"), button[type="submit"]')
-                count = await buttons.count()
-                if count > 0:
-                    await buttons.last.click()
+            addr = get_random_address()
+            cpf_digits = user_data["cpf"].replace(".", "").replace("-", "").replace(" ", "")
 
-            await asyncio.sleep(random.uniform(2.0, 4.0))
+            # ═══════════════════════════════════════════════════════════
+            # LOOP DE DETECCAO UNIVERSAL
+            # Detecta e preenche campos visiveis, depois clica no botao
+            # Repete ate chegar na tela final ou esgotar tentativas
+            # ═══════════════════════════════════════════════════════════
 
-            # --- ETAPA 3: PAGAMENTO ---
-            session.add_log("Verificando tela de pagamento...", "info")
+            max_etapas = 5  # Maximo de etapas que o checkout pode ter
+            etapa_atual = 0
 
-            try:
-                # Verifica se chegou na tela de pagamento
-                await page.wait_for_selector(
-                    'text="pagamento", text="Pagamento", text="PIX", text="Pix", text="pix", text="Cartao", text="Boleto"',
-                    timeout=15000
-                )
-                session.add_log("CHECKOUT ALCANCOU A TELA DE PAGAMENTO COM SUCESSO!", "success")
+            for etapa in range(max_etapas):
+                etapa_atual += 1
+                session.add_log(f"=== ETAPA {etapa_atual} - Detectando campos... ===", "info")
+                await asyncio.sleep(random.uniform(0.5, 1.0))
 
-                # Tenta selecionar PIX como metodo de pagamento
-                try:
-                    pix_option = page.locator('text="PIX", text="Pix", [data-method="pix"], label:has-text("PIX")').first
-                    if await pix_option.is_visible(timeout=5000):
-                        await pix_option.click()
-                        session.add_log("Metodo PIX selecionado!", "info")
-                        await asyncio.sleep(random.uniform(1.0, 2.0))
+                campos_preenchidos = 0
 
-                        # Tenta clicar no botao final de compra
-                        try:
-                            buy_btn = page.locator(
-                                'button:has-text("Comprar"), button:has-text("Finalizar"), '
-                                'button:has-text("Pagar"), button:has-text("COMPRAR"), '
-                                'button:has-text("FINALIZAR"), button:has-text("PAGAR"), '
-                                'button:has-text("Gerar"), button:has-text("GERAR")'
-                            ).first
-                            if await buy_btn.is_visible(timeout=5000):
-                                await buy_btn.click()
-                                session.add_log("BOTAO DE COMPRA CLICADO! VENDA GERADA!", "success")
-                                await asyncio.sleep(random.uniform(3.0, 5.0))
-                        except Exception:
-                            session.add_log("Botao de compra nao encontrado, mas checkout foi alcancado.", "info")
-                except Exception:
-                    session.add_log("PIX nao encontrado, tentando outro metodo...", "info")
+                # --- CAMPO: NOME ---
+                nome_selectors = [
+                    'input#name', 'input[name="name"]', 'input[name="nome"]',
+                    'input[name="customer_name"]', 'input[name="full_name"]',
+                    'input[name="fullName"]', 'input[name="customerName"]',
+                    'input[placeholder*="Nome"]', 'input[placeholder*="nome"]',
+                    'input[placeholder*="Maria"]', 'input[placeholder*="completo"]',
+                    'input[autocomplete="name"]', 'input[autocomplete="given-name"]',
+                ]
+                if await smart_fill_field(page, nome_selectors, user_data["name"], "Nome", session):
+                    campos_preenchidos += 1
 
-                session.successes += 1
-                return True
+                # --- CAMPO: EMAIL ---
+                email_selectors = [
+                    'input#email', 'input[name="email"]', 'input[name="e-mail"]',
+                    'input[name="customer_email"]', 'input[name="customerEmail"]',
+                    'input[type="email"]',
+                    'input[placeholder*="email"]', 'input[placeholder*="Email"]',
+                    'input[placeholder*="e-mail"]', 'input[placeholder*="@"]',
+                    'input[autocomplete="email"]',
+                ]
+                if await smart_fill_field(page, email_selectors, user_data["email"], "Email", session):
+                    campos_preenchidos += 1
 
-            except Exception as e:
-                session.add_log(f"Nao alcancou tela de pagamento: {str(e)[:100]}", "error")
-                session.failures += 1
-                return False
+                # --- SELETOR DE PAIS (se existir) ---
+                await smart_select_country_brazil(page, session)
+
+                # --- CAMPO: TELEFONE / CELULAR ---
+                phone_selectors = [
+                    'input#phone', 'input[name="phone"]', 'input[name="telefone"]',
+                    'input[name="celular"]', 'input[name="cellphone"]',
+                    'input[name="customer_phone"]', 'input[name="whatsapp"]',
+                    'input[type="tel"]',
+                    'input[placeholder*="celular"]', 'input[placeholder*="Celular"]',
+                    'input[placeholder*="telefone"]', 'input[placeholder*="Telefone"]',
+                    'input[placeholder*="WhatsApp"]', 'input[placeholder*="(11)"]',
+                    'input[placeholder*="DDD"]',
+                    'input[autocomplete="tel"]',
+                ]
+                if await smart_fill_field(page, phone_selectors, user_data["phone"], "Celular", session):
+                    campos_preenchidos += 1
+
+                # --- CAMPO: CPF (pode aparecer em qualquer etapa) ---
+                cpf_selectors = [
+                    'input#cpf', 'input[name="cpf"]', 'input[name="document"]',
+                    'input[name="doc"]', 'input[name="customer_cpf"]',
+                    'input[name="cpfCnpj"]', 'input[name="taxId"]',
+                    'input[placeholder*="CPF"]', 'input[placeholder*="cpf"]',
+                    'input[placeholder*="000.000.000"]', 'input[placeholder*="documento"]',
+                ]
+                if await smart_fill_field(page, cpf_selectors, cpf_digits, "CPF", session):
+                    campos_preenchidos += 1
+
+                # --- CAMPO: CEP ---
+                cep_selectors = [
+                    'input#cep', 'input[name="cep"]', 'input[name="zipcode"]',
+                    'input[name="zip_code"]', 'input[name="postalCode"]',
+                    'input[name="postal_code"]', 'input[name="zip"]',
+                    'input[placeholder*="CEP"]', 'input[placeholder*="cep"]',
+                    'input[placeholder*="codigo postal"]', 'input[placeholder*="Código Postal"]',
+                    'input[placeholder*="00000-000"]', 'input[placeholder*="00000000"]',
+                ]
+                if await smart_fill_field(page, cep_selectors, addr["cep"], "CEP", session):
+                    campos_preenchidos += 1
+                    # Espera o CEP preencher automaticamente os outros campos
+                    await asyncio.sleep(random.uniform(2.0, 3.0))
+
+                # --- CAMPO: RUA ---
+                rua_selectors = [
+                    'input#street', 'input[name="street"]', 'input[name="rua"]',
+                    'input[name="address"]', 'input[name="endereco"]',
+                    'input[name="address_street"]', 'input[name="logradouro"]',
+                    'input[placeholder*="Rua"]', 'input[placeholder*="rua"]',
+                    'input[placeholder*="Avenida"]', 'input[placeholder*="endereco"]',
+                    'input[placeholder*="Endereço"]',
+                ]
+                if await smart_fill_field(page, rua_selectors, addr["rua"], "Rua", session):
+                    campos_preenchidos += 1
+
+                # --- CAMPO: NUMERO ---
+                numero_selectors = [
+                    'input#number', 'input[name="number"]', 'input[name="numero"]',
+                    'input[name="addressNumber"]', 'input[name="address_number"]',
+                    'input[name="num"]',
+                    'input[placeholder*="123"]', 'input[placeholder*="mero"]',
+                    'input[placeholder*="Número"]', 'input[placeholder*="numero"]',
+                ]
+                if await smart_fill_field(page, numero_selectors, addr["numero"], "Numero", session):
+                    campos_preenchidos += 1
+
+                # --- CAMPO: COMPLEMENTO ---
+                comp_selectors = [
+                    'input#complement', 'input[name="complement"]', 'input[name="complemento"]',
+                    'input[name="address_complement"]', 'input[name="comp"]',
+                    'input[placeholder*="Apto"]', 'input[placeholder*="Bloco"]',
+                    'input[placeholder*="complemento"]', 'input[placeholder*="Complemento"]',
+                ]
+                if addr["complemento"]:
+                    if await smart_fill_field(page, comp_selectors, addr["complemento"], "Complemento", session):
+                        campos_preenchidos += 1
+
+                # --- CAMPO: BAIRRO ---
+                bairro_selectors = [
+                    'input#neighborhood', 'input[name="neighborhood"]', 'input[name="bairro"]',
+                    'input[name="district"]', 'input[name="address_neighborhood"]',
+                    'input[placeholder*="bairro"]', 'input[placeholder*="Bairro"]',
+                    'input[placeholder*="Seu bairro"]',
+                ]
+                if await smart_fill_field(page, bairro_selectors, addr["bairro"], "Bairro", session):
+                    campos_preenchidos += 1
+
+                # --- CAMPO: CIDADE ---
+                cidade_selectors = [
+                    'input#city', 'input[name="city"]', 'input[name="cidade"]',
+                    'input[name="address_city"]',
+                    'input[placeholder*="cidade"]', 'input[placeholder*="Cidade"]',
+                    'input[placeholder*="Sua cidade"]',
+                ]
+                if await smart_fill_field(page, cidade_selectors, addr["cidade"], "Cidade", session):
+                    campos_preenchidos += 1
+
+                # --- CAMPO: ESTADO ---
+                estado_selectors = [
+                    'input#state', 'input[name="state"]', 'input[name="estado"]',
+                    'input[name="uf"]', 'input[name="address_state"]',
+                    'input[placeholder*="UF"]', 'input[placeholder*="Estado"]',
+                    'input[placeholder*="estado"]',
+                ]
+                if await smart_fill_field(page, estado_selectors, addr["estado"], "Estado", session):
+                    campos_preenchidos += 1
+
+                session.add_log(f"Etapa {etapa_atual}: {campos_preenchidos} campos preenchidos", "info")
+                await asyncio.sleep(random.uniform(0.5, 1.0))
+
+                # --- SELECIONAR PIX (se estiver na tela de pagamento) ---
+                pix_selecionado = False
+                pix_selectors = [
+                    'button:has-text("PIX")', 'button:has-text("Pix")',
+                    'label:has-text("PIX")', 'label:has-text("Pix")',
+                    '[data-method="pix"]', '[data-payment="pix"]',
+                    'input[value="pix"]', 'div:has-text("PIX"):not(button)',
+                ]
+                for sel in pix_selectors:
+                    try:
+                        pix_el = page.locator(sel).first
+                        if await pix_el.is_visible(timeout=2000):
+                            await pix_el.click()
+                            pix_selecionado = True
+                            session.add_log("Metodo PIX selecionado!", "success")
+                            await asyncio.sleep(random.uniform(0.5, 1.0))
+                            break
+                    except Exception:
+                        continue
+
+                # --- CLICAR NO BOTAO DE AVANCAR / FINALIZAR ---
+                # Lista AMPLA de todos os textos possiveis de botoes
+                botoes_avancar = [
+                    # Botoes de avancar etapa
+                    "Próximo", "Proximo", "PRÓXIMO", "PROXIMO",
+                    "Continuar", "CONTINUAR", "Continue",
+                    "Avançar", "Avancar", "AVANÇAR", "AVANCAR",
+                    "Ir para Pagamento", "IR PARA PAGAMENTO",
+                    "Ir para pagamento", "Ir para o pagamento",
+                    "Ir para entrega", "Ir para Entrega",
+                    "Salvar e continuar", "SALVAR E CONTINUAR",
+                    "Prosseguir", "PROSSEGUIR",
+                    "Next", "NEXT",
+                    # Botoes de finalizar compra / gerar pedido
+                    "Gerar Pix", "GERAR PIX", "Gerar pix", "Gerar PIX",
+                    "Gerar Boleto", "GERAR BOLETO",
+                    "Comprar", "COMPRAR", "Comprar agora", "COMPRAR AGORA",
+                    "Finalizar", "FINALIZAR", "Finalizar compra", "FINALIZAR COMPRA",
+                    "Finalizar pedido", "FINALIZAR PEDIDO",
+                    "Pagar", "PAGAR", "Pagar agora", "PAGAR AGORA",
+                    "Confirmar", "CONFIRMAR", "Confirmar pedido", "CONFIRMAR PEDIDO",
+                    "Concluir", "CONCLUIR", "Concluir compra", "CONCLUIR COMPRA",
+                    "Fechar pedido", "FECHAR PEDIDO",
+                    "Realizar pagamento", "REALIZAR PAGAMENTO",
+                    "Efetuar pagamento", "EFETUAR PAGAMENTO",
+                    "Place Order", "PLACE ORDER",
+                    "Submit", "SUBMIT",
+                ]
+
+                botao_clicado = await smart_click_button(page, botoes_avancar, f"Etapa {etapa_atual}", session)
+
+                if not botao_clicado:
+                    session.add_log(f"Nenhum botao encontrado na etapa {etapa_atual}. Verificando se e a tela final...", "info")
+                    break
+
+                # Espera a proxima etapa carregar
+                await asyncio.sleep(random.uniform(2.0, 4.0))
+
+                # --- VERIFICA SE A VENDA FOI GERADA ---
+                # Procura por indicadores de sucesso na pagina
+                sucesso_selectors = [
+                    'text="Pedido realizado"', 'text="pedido realizado"',
+                    'text="Compra realizada"', 'text="compra realizada"',
+                    'text="Pagamento gerado"', 'text="pagamento gerado"',
+                    'text="PIX gerado"', 'text="Pix gerado"', 'text="pix gerado"',
+                    'text="QR Code"', 'text="qr code"', 'text="QR code"',
+                    'text="Copia e Cola"', 'text="copia e cola"',
+                    'text="Copiar codigo"', 'text="Copiar código"',
+                    'text="Aguardando pagamento"', 'text="aguardando pagamento"',
+                    'text="Obrigado"', 'text="obrigado"',
+                    'text="Parabéns"', 'text="parabens"',
+                    'text="sucesso"', 'text="Sucesso"',
+                    'text="Boleto gerado"', 'text="boleto gerado"',
+                    'text="Pedido confirmado"', 'text="pedido confirmado"',
+                    'img[alt*="qr"]', 'img[alt*="QR"]',
+                    'canvas', '[class*="qr"]', '[class*="pix"]',
+                ]
+                for sel in sucesso_selectors:
+                    try:
+                        el = page.locator(sel).first
+                        if await el.is_visible(timeout=2000):
+                            session.add_log("VENDA GERADA COM SUCESSO! Indicador de sucesso detectado!", "success")
+                            session.successes += 1
+                            return True
+                    except Exception:
+                        continue
+
+            # Se chegou aqui sem detectar sucesso, verifica uma ultima vez
+            session.add_log("Fluxo completo percorrido. Verificando resultado final...", "info")
+
+            # Ultima tentativa de detectar sucesso
+            page_text = await page.text_content("body")
+            if page_text:
+                page_text_lower = page_text.lower()
+                indicadores = ["pix gerado", "qr code", "aguardando pagamento", "pedido realizado",
+                               "compra realizada", "obrigado", "sucesso", "copia e cola",
+                               "copiar codigo", "boleto gerado", "pedido confirmado"]
+                for ind in indicadores:
+                    if ind in page_text_lower:
+                        session.add_log(f"VENDA GERADA! Detectado: '{ind}' na pagina!", "success")
+                        session.successes += 1
+                        return True
+
+            session.add_log("Fluxo percorrido mas nao foi possivel confirmar a venda.", "error")
+            session.failures += 1
+            return False
 
         except Exception as e:
             session.add_log(f"Erro na sessao: {str(e)[:150]}", "error")
@@ -444,7 +672,7 @@ async def api_stop(session_id: str, _=Depends(verify_token)):
 async def health():
     return {
         "status": "ok",
-        "engine": "PHANTOM ENGINE v3.0 (Browserless.io)",
+        "engine": "PHANTOM ENGINE v3.2 UNIVERSAL",
         "browserless": "connected",
         "sessions": len(sessions),
     }
@@ -452,6 +680,6 @@ async def health():
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    log.info("Iniciando PHANTOM ENGINE v3.0 — Browserless.io Mode")
+    log.info("Iniciando PHANTOM ENGINE v3.2 — Universal Checkout Engine")
     log.info(f"Browserless WS: {BROWSERLESS_WS_URL[:50]}...")
     uvicorn.run(app, host="0.0.0.0", port=8000)

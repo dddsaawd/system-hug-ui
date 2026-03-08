@@ -33,7 +33,24 @@ log = logging.getLogger("phantom_engine")
 # ─── Config ───────────────────────────────────────────────────────────────────
 API_TOKEN = os.environ.get("API_TOKEN", "phantom-secret-token-2024")
 BROWSERLESS_API_KEY = os.environ.get("BROWSERLESS_API_KEY", "")
-BROWSERLESS_WS_URL = f"wss://chrome.browserless.io?token={BROWSERLESS_API_KEY}&timeout=60000"
+BROWSERLESS_BASE_URL = f"wss://chrome.browserless.io?token={BROWSERLESS_API_KEY}&timeout=60000"
+
+def build_browserless_url(proxy: str = "") -> str:
+    """Constroi a URL do Browserless.io com proxy integrado."""
+    url = BROWSERLESS_BASE_URL
+    if proxy and proxy.strip():
+        # Extrai o servidor do proxy (ex: http://user:pass@ip:porta -> ip:porta ou user:pass@ip:porta)
+        proxy_clean = proxy.strip()
+        # Remove protocolo se existir
+        for prefix in ["http://", "https://", "socks5://", "socks4://"]:
+            if proxy_clean.startswith(prefix):
+                proxy_clean = proxy_clean[len(prefix):]
+                break
+        # Reconstroi como http://...
+        proxy_server = f"http://{proxy_clean}"
+        # Adiciona como launch arg para o Chrome
+        url += f"&--proxy-server={proxy_server}"
+    return url
 CPF_FILE = Path("cpfs.txt")
 
 # ─── App FastAPI ──────────────────────────────────────────────────────────────
@@ -281,7 +298,9 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
     async with async_playwright() as p:
         session.add_log("Conectando ao Browserless.io (Chrome remoto na nuvem)...", "info")
         try:
-            browser = await p.chromium.connect_over_cdp(BROWSERLESS_WS_URL)
+            ws_url = build_browserless_url(proxy)
+            session.add_log(f"Proxy aplicado no Browserless: {proxy[:40]}...", "info")
+            browser = await p.chromium.connect_over_cdp(ws_url)
 
             context = await browser.new_context(
                 user_agent=random.choice([

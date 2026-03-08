@@ -150,9 +150,12 @@ export default function ApiSettings() {
                 onChange={(e) => setEngineUrl(e.target.value)}
                 placeholder="http://localhost:8000"
               />
-              <p className="text-xs text-muted-foreground">
-                Endpoints: /api/start, /api/status/&#123;id&#125;, /api/stop/&#123;id&#125;
-              </p>
+               <p className="text-xs text-muted-foreground">
+                 Endpoints: /api/start, /api/status/&#123;id&#125;, /api/stop/&#123;id&#125;
+               </p>
+               <p className="text-xs text-yellow-500/80">
+                 ⚠️ Render Free: o servidor adormece após 15min de inatividade. A primeira requisição pode levar até 50s (cold start).
+               </p>
             </div>
             <div className="space-y-2">
               <Label>Bearer Token (API_TOKEN) *</Label>

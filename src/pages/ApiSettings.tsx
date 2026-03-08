@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Trash2, TestTube2, Save, Wifi, WifiOff, Zap } from "lucide-react";
+import { Plus, Trash2, TestTube2, Save, Wifi, WifiOff, Zap, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ export default function ApiSettings() {
   const savedEngine = getEngineConfig();
   const [engineUrl, setEngineUrl] = useState(savedEngine.baseUrl);
   const [engineToken, setEngineToken] = useState(savedEngine.token);
+  const [engineStatus, setEngineStatus] = useState<"idle" | "testing" | "ok" | "error">("idle");
 
   const current = configs.find((c) => c.id === selected);
 
@@ -39,6 +40,7 @@ export default function ApiSettings() {
       toast.error("Preencha URL e Token primeiro");
       return;
     }
+    setEngineStatus("testing");
     const toastId = toast.loading("Testando conexão com o Motor...");
     try {
       const controller = new AbortController();
@@ -50,14 +52,18 @@ export default function ApiSettings() {
       clearTimeout(timeout);
       toast.dismiss(toastId);
       if (res.ok || res.status === 404) {
+        setEngineStatus("ok");
         toast.success("Servidor respondendo! Conexão OK.");
       } else if (res.status === 401 || res.status === 403) {
+        setEngineStatus("error");
         toast.error("Token inválido ou sem permissão.");
       } else {
+        setEngineStatus("error");
         toast.warning(`Servidor respondeu com status ${res.status}`);
       }
     } catch (e: any) {
       toast.dismiss(toastId);
+      setEngineStatus("error");
       if (e?.name === "AbortError") {
         toast.error("Timeout: servidor demorou demais para responder (>15s). Pode estar iniciando (cold start).");
       } else {
@@ -170,13 +176,34 @@ export default function ApiSettings() {
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={handleTestEngine}>
-              <TestTube2 className="mr-2 h-4 w-4" /> Testar Conexão
+          <div className="flex items-center gap-3">
+            <Button variant="outline" onClick={handleTestEngine} disabled={engineStatus === "testing"}>
+              {engineStatus === "testing" ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <TestTube2 className="mr-2 h-4 w-4" />
+              )}
+              Testar Conexão
             </Button>
             <Button onClick={handleSaveEngine}>
               <Save className="mr-2 h-4 w-4" /> Salvar
             </Button>
+
+            {engineStatus === "testing" && (
+              <span className="flex items-center gap-1.5 text-sm text-muted-foreground animate-pulse">
+                <Loader2 className="h-4 w-4 animate-spin" /> Aguardando resposta...
+              </span>
+            )}
+            {engineStatus === "ok" && (
+              <span className="flex items-center gap-1.5 text-sm text-primary font-medium">
+                <CheckCircle2 className="h-4 w-4" /> Conectado
+              </span>
+            )}
+            {engineStatus === "error" && (
+              <span className="flex items-center gap-1.5 text-sm text-destructive font-medium">
+                <XCircle className="h-4 w-4" /> Falha na conexão
+              </span>
+            )}
           </div>
         </CardContent>
       </Card>

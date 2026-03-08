@@ -44,7 +44,7 @@ def build_browserless_url() -> str:
 CPF_FILE = Path("cpfs.txt")
 
 # ─── App FastAPI ──────────────────────────────────────────────────────────────
-app = FastAPI(title="PHANTOM ENGINE v3.6 UNIVERSAL", version="3.6.0")
+app = FastAPI(title="PHANTOM ENGINE v3.7 UNIVERSAL", version="3.7.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -594,7 +594,12 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
             proxy_config = None
             if proxy and proxy.strip():
                 proxy_clean = proxy.strip()
-                # Remove prefixos se existirem
+                # Detecta o protocolo correto (SOCKS5 ou HTTP)
+                protocol = "http"
+                if "socks5://" in proxy.lower() or ":10324" in proxy:
+                    protocol = "socks5"
+                
+                proxy_clean = proxy.strip()
                 for prefix in ["http://", "https://", "socks5://", "socks4://"]:
                     if proxy_clean.startswith(prefix):
                         proxy_clean = proxy_clean[len(prefix):]
@@ -605,12 +610,12 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     auth_part, server_part = proxy_clean.split("@")
                     username, password = auth_part.split(":")
                     proxy_config = {
-                        "server": f"http://{server_part}",
+                        "server": f"{protocol}://{server_part}",
                         "username": username,
                         "password": password
                     }
                 else:
-                    proxy_config = {"server": f"http://{proxy_clean}"}
+                    proxy_config = {"server": f"{protocol}://{proxy_clean}"}
                 
                 session.add_log(f"Proxy configurado no contexto: {proxy_config['server']}", "info")
 
@@ -1027,7 +1032,7 @@ async def api_stop(session_id: str, _=Depends(verify_token)):
 async def health():
     return {
         "status": "ok",
-        "engine": "PHANTOM ENGINE v3.6 UNIVERSAL",
+        "engine": "PHANTOM ENGINE v3.7 UNIVERSAL",
         "browserless": "connected",
         "sessions": len(sessions),
     }

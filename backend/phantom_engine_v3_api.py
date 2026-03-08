@@ -44,7 +44,7 @@ def build_browserless_url() -> str:
 CPF_FILE = Path("cpfs.txt")
 
 # ─── App FastAPI ──────────────────────────────────────────────────────────────
-app = FastAPI(title="PHANTOM ENGINE v3.5 UNIVERSAL", version="3.5.0")
+app = FastAPI(title="PHANTOM ENGINE v3.6 UNIVERSAL", version="3.6.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -1027,7 +1027,7 @@ async def api_stop(session_id: str, _=Depends(verify_token)):
 async def health():
     return {
         "status": "ok",
-        "engine": "PHANTOM ENGINE v3.5 UNIVERSAL",
+        "engine": "PHANTOM ENGINE v3.6 UNIVERSAL",
         "browserless": "connected",
         "sessions": len(sessions),
     }

@@ -37,18 +37,9 @@ API_TOKEN = os.environ.get("API_TOKEN", "phantom-secret-token-2024")
 BROWSERLESS_API_KEY = os.environ.get("BROWSERLESS_API_KEY", "")
 BROWSERLESS_BASE_URL = f"wss://chrome.browserless.io?token={BROWSERLESS_API_KEY}&timeout=60000"
 
-def build_browserless_url(proxy: str = "") -> str:
-    """Constroi a URL do Browserless.io com proxy integrado."""
-    url = BROWSERLESS_BASE_URL
-    if proxy and proxy.strip():
-        proxy_clean = proxy.strip()
-        for prefix in ["http://", "https://", "socks5://", "socks4://"]:
-            if proxy_clean.startswith(prefix):
-                proxy_clean = proxy_clean[len(prefix):]
-                break
-        proxy_server = f"http://{proxy_clean}"
-        url += f"&--proxy-server={proxy_server}"
-    return url
+def build_browserless_url() -> str:
+    """Constroi a URL do Browserless.io sem proxy (para evitar erro 401 no plano free)."""
+    return BROWSERLESS_BASE_URL
 
 CPF_FILE = Path("cpfs.txt")
 
@@ -596,9 +587,32 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
     async with async_playwright() as p:
         session.add_log("Conectando ao Browserless.io...", "info")
         try:
-            ws_url = build_browserless_url(proxy)
-            session.add_log(f"Proxy: {proxy[:40]}...", "info")
+            ws_url = build_browserless_url()
             browser = await p.chromium.connect_over_cdp(ws_url)
+
+            # Configura o proxy diretamente no contexto do Playwright
+            proxy_config = None
+            if proxy and proxy.strip():
+                proxy_clean = proxy.strip()
+                # Remove prefixos se existirem
+                for prefix in ["http://", "https://", "socks5://", "socks4://"]:
+                    if proxy_clean.startswith(prefix):
+                        proxy_clean = proxy_clean[len(prefix):]
+                        break
+                
+                # Se tiver auth (user:pass@host:port)
+                if "@" in proxy_clean:
+                    auth_part, server_part = proxy_clean.split("@")
+                    username, password = auth_part.split(":")
+                    proxy_config = {
+                        "server": f"http://{server_part}",
+                        "username": username,
+                        "password": password
+                    }
+                else:
+                    proxy_config = {"server": f"http://{proxy_clean}"}
+                
+                session.add_log(f"Proxy configurado no contexto: {proxy_config['server']}", "info")
 
             context = await browser.new_context(
                 user_agent=random.choice([
@@ -610,6 +624,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 viewport={"width": random.choice([1366, 1440, 1920]), "height": random.choice([768, 900, 1080])},
                 locale="pt-BR",
                 timezone_id="America/Sao_Paulo",
+                proxy=proxy_config
             )
             page = await context.new_page()
 

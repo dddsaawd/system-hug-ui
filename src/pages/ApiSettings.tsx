@@ -39,12 +39,16 @@ export default function ApiSettings() {
       toast.error("Preencha URL e Token primeiro");
       return;
     }
-    toast.loading("Testando conexão com o Motor...");
+    const toastId = toast.loading("Testando conexão com o Motor...");
     try {
-      const res = await fetch(`${engineUrl.replace(/\/+$/, "")}/api/status/test`, {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      const res = await fetch(`${engineUrl.replace(/\/+$/, "")}/api/health`, {
         headers: { Authorization: `Bearer ${engineToken}` },
+        signal: controller.signal,
       });
-      toast.dismiss();
+      clearTimeout(timeout);
+      toast.dismiss(toastId);
       if (res.ok || res.status === 404) {
         toast.success("Servidor respondendo! Conexão OK.");
       } else if (res.status === 401 || res.status === 403) {
@@ -52,9 +56,13 @@ export default function ApiSettings() {
       } else {
         toast.warning(`Servidor respondeu com status ${res.status}`);
       }
-    } catch {
-      toast.dismiss();
-      toast.error("Não foi possível conectar. Verifique a URL e se o motor está rodando.");
+    } catch (e: any) {
+      toast.dismiss(toastId);
+      if (e?.name === "AbortError") {
+        toast.error("Timeout: servidor demorou demais para responder (>15s). Pode estar iniciando (cold start).");
+      } else {
+        toast.error("Não foi possível conectar. Verifique a URL e se o motor está rodando.");
+      }
     }
   };
 

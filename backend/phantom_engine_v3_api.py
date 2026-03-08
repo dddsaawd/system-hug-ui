@@ -33,7 +33,7 @@ log = logging.getLogger("phantom_engine")
 # ─── Config ───────────────────────────────────────────────────────────────────
 API_TOKEN = os.environ.get("API_TOKEN", "phantom-secret-token-2024")
 BROWSERLESS_API_KEY = os.environ.get("BROWSERLESS_API_KEY", "")
-BROWSERLESS_WS_URL = f"wss://chrome.browserless.io?token={BROWSERLESS_API_KEY}&timeout=120000"
+BROWSERLESS_WS_URL = f"wss://chrome.browserless.io?token={BROWSERLESS_API_KEY}&timeout=60000"
 CPF_FILE = Path("cpfs.txt")
 
 # ─── App FastAPI ──────────────────────────────────────────────────────────────

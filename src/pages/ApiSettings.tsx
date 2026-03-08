@@ -176,13 +176,34 @@ export default function ApiSettings() {
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={handleTestEngine}>
-              <TestTube2 className="mr-2 h-4 w-4" /> Testar Conexão
+          <div className="flex items-center gap-3">
+            <Button variant="outline" onClick={handleTestEngine} disabled={engineStatus === "testing"}>
+              {engineStatus === "testing" ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <TestTube2 className="mr-2 h-4 w-4" />
+              )}
+              Testar Conexão
             </Button>
             <Button onClick={handleSaveEngine}>
               <Save className="mr-2 h-4 w-4" /> Salvar
             </Button>
+
+            {engineStatus === "testing" && (
+              <span className="flex items-center gap-1.5 text-sm text-muted-foreground animate-pulse">
+                <Loader2 className="h-4 w-4 animate-spin" /> Aguardando resposta...
+              </span>
+            )}
+            {engineStatus === "ok" && (
+              <span className="flex items-center gap-1.5 text-sm text-primary font-medium">
+                <CheckCircle2 className="h-4 w-4" /> Conectado
+              </span>
+            )}
+            {engineStatus === "error" && (
+              <span className="flex items-center gap-1.5 text-sm text-destructive font-medium">
+                <XCircle className="h-4 w-4" /> Falha na conexão
+              </span>
+            )}
           </div>
         </CardContent>
       </Card>

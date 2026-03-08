@@ -18,6 +18,7 @@ export default function ApiSettings() {
   const savedEngine = getEngineConfig();
   const [engineUrl, setEngineUrl] = useState(savedEngine.baseUrl);
   const [engineToken, setEngineToken] = useState(savedEngine.token);
+  const [engineStatus, setEngineStatus] = useState<"idle" | "testing" | "ok" | "error">("idle");
 
   const current = configs.find((c) => c.id === selected);
 

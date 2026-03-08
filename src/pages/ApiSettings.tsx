@@ -40,16 +40,18 @@ export default function ApiSettings() {
       toast.error("Preencha URL e Token primeiro");
       return;
     }
+
     setEngineStatus("testing");
     const toastId = toast.loading("Testando conexão com o Motor...");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort("render-cold-start-timeout"), 65000);
+
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
       const res = await fetch(`${engineUrl.replace(/\/+$/, "")}/api/health`, {
         headers: { Authorization: `Bearer ${engineToken}` },
         signal: controller.signal,
       });
-      clearTimeout(timeout);
+
       toast.dismiss(toastId);
       if (res.ok || res.status === 404) {
         setEngineStatus("ok");
@@ -65,10 +67,12 @@ export default function ApiSettings() {
       toast.dismiss(toastId);
       setEngineStatus("error");
       if (e?.name === "AbortError") {
-        toast.error("Timeout: servidor demorou demais para responder (>15s). Pode estar iniciando (cold start).");
+        toast.error("Timeout >65s: o Render Free pode estar acordando. Aguarde alguns segundos e teste novamente.");
       } else {
         toast.error("Não foi possível conectar. Verifique a URL e se o motor está rodando.");
       }
+    } finally {
+      clearTimeout(timeout);
     }
   };
 

@@ -5,7 +5,8 @@ import {
   Settings,
   BarChart3,
   Rocket,
-  ShieldBan } from
+  ShieldBan,
+  CalendarClock } from
 "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -29,6 +30,7 @@ const navItems = [
 { title: "Checkouts", url: "/checkouts", icon: Link2 },
 { title: "Retentativas", url: "/retries", icon: RotateCcw },
 { title: "Relatórios", url: "/reports", icon: BarChart3 },
+{ title: "Agendamento", url: "/scheduling", icon: CalendarClock },
 { title: "Configurações", url: "/settings", icon: Settings }];
 
 

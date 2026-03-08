@@ -10,6 +10,7 @@ import Checkouts from "./pages/Checkouts";
 import Retries from "./pages/Retries";
 import ApiSettings from "./pages/ApiSettings";
 import Reports from "./pages/Reports";
+import Scheduling from "./pages/Scheduling";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="/retries" element={<Retries />} />
             <Route path="/settings" element={<ApiSettings />} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/scheduling" element={<Scheduling />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </DashboardLayout>

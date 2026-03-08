@@ -40,6 +40,7 @@ export default function ApiSettings() {
       toast.error("Preencha URL e Token primeiro");
       return;
     }
+    setEngineStatus("testing");
     const toastId = toast.loading("Testando conexão com o Motor...");
     try {
       const controller = new AbortController();
@@ -51,14 +52,18 @@ export default function ApiSettings() {
       clearTimeout(timeout);
       toast.dismiss(toastId);
       if (res.ok || res.status === 404) {
+        setEngineStatus("ok");
         toast.success("Servidor respondendo! Conexão OK.");
       } else if (res.status === 401 || res.status === 403) {
+        setEngineStatus("error");
         toast.error("Token inválido ou sem permissão.");
       } else {
+        setEngineStatus("error");
         toast.warning(`Servidor respondeu com status ${res.status}`);
       }
     } catch (e: any) {
       toast.dismiss(toastId);
+      setEngineStatus("error");
       if (e?.name === "AbortError") {
         toast.error("Timeout: servidor demorou demais para responder (>15s). Pode estar iniciando (cold start).");
       } else {

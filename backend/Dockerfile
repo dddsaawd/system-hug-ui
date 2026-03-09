@@ -7,7 +7,7 @@ COPY phantom_engine_v3_api.py .
 COPY cpfs.txt* ./
 
 # Instala dependencias Python (Playwright apenas como client, sem Chrome local)
-RUN pip install --no-cache-dir fastapi uvicorn pydantic playwright proxy-chain \
+RUN pip install --no-cache-dir fastapi uvicorn pydantic playwright PySocks \
     && playwright install-deps \
     && playwright install chromium
 

@@ -45,7 +45,7 @@ def build_browserless_url() -> str:
 CPF_FILE = Path("cpfs.txt")
 
 # ─── App FastAPI ──────────────────────────────────────────────────────────────
-app = FastAPI(title="PHANTOM ENGINE v3.8 UNIVERSAL", version="3.8.0")
+app = FastAPI(title="PHANTOM ENGINE v3.9 UNIVERSAL", version="3.9.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -591,45 +591,36 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
             ws_url = build_browserless_url()
             browser = await p.chromium.connect_over_cdp(ws_url)
 
-            # Configura o proxy usando Proxy-Chain para suportar SOCKS5 com Auth
+            # Configura o proxy usando protocolo socks5h para suportar SOCKS5 com Auth nativamente
             proxy_config = None
-            anonymized_proxy_url = None
             
             if proxy and proxy.strip():
                 proxy_clean = proxy.strip()
                 protocol = "http"
                 if "socks5://" in proxy.lower() or ":10324" in proxy:
-                    protocol = "socks5"
+                    # O protocolo 'socks5h' faz o navegador resolver o DNS via proxy,
+                    # o que é essencial para autenticação SOCKS5 funcionar no Chromium.
+                    protocol = "socks5h"
                 
                 # Remove prefixos
-                for prefix in ["http://", "https://", "socks5://", "socks4://"]:
+                for prefix in ["http://", "https://", "socks5://", "socks4://", "socks5h://"]:
                     if proxy_clean.startswith(prefix):
                         proxy_clean = proxy_clean[len(prefix):]
                         break
                 
-                # Monta a URL completa do proxy original
-                original_proxy_url = f"{protocol}://{proxy_clean}"
+                # Se tiver auth (user:pass@host:port)
+                if "@" in proxy_clean:
+                    auth_part, server_part = proxy_clean.split("@")
+                    username, password = auth_part.split(":")
+                    proxy_config = {
+                        "server": f"{protocol}://{server_part}",
+                        "username": username,
+                        "password": password
+                    }
+                else:
+                    proxy_config = {"server": f"{protocol}://{proxy_clean}"}
                 
-                try:
-                    # Usa proxy-chain para criar um túnel local anônimo
-                    # Isso resolve o problema do Chromium não suportar SOCKS5 com Auth
-                    import proxy_chain
-                    anonymized_proxy_url = await asyncio.to_thread(proxy_chain.anonymize_proxy, original_proxy_url)
-                    proxy_config = {"server": anonymized_proxy_url}
-                    session.add_log(f"Proxy tunelado (SOCKS5 -> HTTP): {proxy_config['server']}", "info")
-                except Exception as pe:
-                    session.add_log(f"Erro ao tunelar proxy: {str(pe)}. Tentando direto...", "error")
-                    # Fallback para o método antigo se falhar
-                    if "@" in proxy_clean:
-                        auth_part, server_part = proxy_clean.split("@")
-                        username, password = auth_part.split(":")
-                        proxy_config = {
-                            "server": f"{protocol}://{server_part}",
-                            "username": username,
-                            "password": password
-                        }
-                    else:
-                        proxy_config = {"server": f"{protocol}://{proxy_clean}"}
+                session.add_log(f"Proxy configurado ({protocol}): {proxy_config['server']}", "info")
 
             context = await browser.new_context(
                 user_agent=random.choice([
@@ -933,12 +924,6 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
             return False
         finally:
             try:
-                if anonymized_proxy_url:
-                    import proxy_chain
-                    await asyncio.to_thread(proxy_chain.close_anonymized_proxy, anonymized_proxy_url)
-            except Exception:
-                pass
-            try:
                 if context:
                     await context.close()
             except Exception:
@@ -1050,7 +1035,7 @@ async def api_stop(session_id: str, _=Depends(verify_token)):
 async def health():
     return {
         "status": "ok",
-        "engine": "PHANTOM ENGINE v3.8 UNIVERSAL",
+        "engine": "PHANTOM ENGINE v3.9 UNIVERSAL",
         "browserless": "connected",
         "sessions": len(sessions),
     }

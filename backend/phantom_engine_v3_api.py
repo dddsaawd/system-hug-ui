@@ -601,6 +601,18 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     "--disable-default-apps",
                     "--disable-sync",
                     "--no-first-run",
+                    "--disable-background-timer-throttling",
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding",
+                    "--disable-features=TranslateUI",
+                    "--disable-ipc-flooding-protection",
+                    "--disable-hang-monitor",
+                    "--disable-component-update",
+                    "--disable-breakpad",
+                    "--disable-component-extensions-with-background-pages",
+                    "--disable-client-side-phishing-detection",
+                    "--js-flags=--max-old-space-size=128",
+                    "--single-process",
                 ]
                 # Playwright local: proxy com auth deve ir no contexto, não no launch
                 launch_proxy = None

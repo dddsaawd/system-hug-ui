@@ -572,7 +572,7 @@ async def check_success(page, session: EngineSession) -> bool:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def run_checkout_session(session: EngineSession, proxy: str, user_data: dict):
-    """Executa uma sessao de checkout universal usando Browserless.io."""
+    """Executa uma sessao de checkout usando Playwright local ou Browserless."""
     try:
         from playwright.async_api import async_playwright
     except ImportError:
@@ -584,29 +584,20 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
     context = None
 
     async with async_playwright() as p:
-        session.add_log("Conectando ao Browserless.io...", "info")
         try:
-            ws_url = build_browserless_url()
-            browser = await p.chromium.connect_over_cdp(ws_url)
-
-            # Configura o proxy usando protocolo socks5h para suportar SOCKS5 com Auth nativamente
+            # Monta proxy config
             proxy_config = None
-            
             if proxy and proxy.strip():
                 proxy_clean = proxy.strip()
                 protocol = "http"
                 if "socks5://" in proxy.lower() or ":10324" in proxy:
-                    # O protocolo 'socks5h' faz o navegador resolver o DNS via proxy,
-                    # o que é essencial para autenticação SOCKS5 funcionar no Chromium.
-                    protocol = "socks5h"
-                
-                # Remove prefixos
+                    protocol = "socks5"
+
                 for prefix in ["http://", "https://", "socks5://", "socks4://", "socks5h://"]:
                     if proxy_clean.startswith(prefix):
                         proxy_clean = proxy_clean[len(prefix):]
                         break
-                
-                # Se tiver auth (user:pass@host:port)
+
                 if "@" in proxy_clean:
                     auth_part, server_part = proxy_clean.split("@")
                     username, password = auth_part.split(":")
@@ -617,8 +608,32 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     }
                 else:
                     proxy_config = {"server": f"{protocol}://{proxy_clean}"}
-                
-                session.add_log(f"Proxy configurado ({protocol}): {proxy_config['server']}", "info")
+
+                session.add_log(f"Proxy: {proxy_config['server']}", "info")
+
+            # === MODO LOCAL (Chromium no servidor) ===
+            if ENGINE_MODE == "local" or not BROWSERLESS_API_KEY:
+                session.add_log("Iniciando Chromium local...", "info")
+                launch_args = [
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--single-process",
+                ]
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=launch_args,
+                    proxy=proxy_config
+                )
+                session.add_log("Chromium local iniciado!", "success")
+            else:
+                # === MODO BROWSERLESS ===
+                session.add_log("Conectando ao Browserless.io...", "info")
+                ws_url = BROWSERLESS_BASE_URL
+                session.add_log(f"Timeout Browserless: 30000ms", "info")
+                browser = await p.chromium.connect_over_cdp(ws_url)
+                session.add_log("Browserless conectado!", "success")
 
             context = await browser.new_context(
                 user_agent=random.choice([
@@ -630,7 +645,6 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 viewport={"width": random.choice([1366, 1440, 1920]), "height": random.choice([768, 900, 1080])},
                 locale="pt-BR",
                 timezone_id="America/Sao_Paulo",
-                proxy=proxy_config
             )
             page = await context.new_page()
 

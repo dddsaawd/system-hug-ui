@@ -1046,10 +1046,11 @@ async def api_stop(session_id: str, _=Depends(verify_token)):
 
 @app.get("/api/health")
 async def health():
+    mode = "local" if (ENGINE_MODE == "local" or not BROWSERLESS_API_KEY) else "browserless"
     return {
         "status": "ok",
-        "engine": "PHANTOM ENGINE v3.9 UNIVERSAL",
-        "browserless": "connected",
+        "engine": "PHANTOM ENGINE v4.0 LOCAL",
+        "mode": mode,
         "sessions": len(sessions),
     }
 

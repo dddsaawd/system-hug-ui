@@ -231,7 +231,7 @@ export default function EngineControl() {
                 disabled={isRunning}
               />
               <p className="text-xs text-muted-foreground">
-                Proxies são rotacionados automaticamente a cada sessão.
+                Proxies são rotacionados automaticamente. Sem proxy = IP direto do servidor.
                 {proxiesText && ` (${proxiesText.split("\n").filter(Boolean).length} carregados)`}
               </p>
             </div>

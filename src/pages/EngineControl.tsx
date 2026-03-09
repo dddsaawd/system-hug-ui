@@ -215,7 +215,7 @@ export default function EngineControl() {
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>Proxies * (um por linha)</Label>
+                <Label>Proxies (opcional, um por linha)</Label>
                 <FileUploadButton
                   label="Carregar proxies.txt"
                   disabled={isRunning}

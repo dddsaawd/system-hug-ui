@@ -149,7 +149,7 @@ export default function EngineControl() {
           <Monitor className="h-6 w-6 text-primary" /> Navegador Fantasma
         </h1>
         <p className="text-sm text-muted-foreground">
-          PHANTOM ENGINE v3.0 — Automação de checkout com Playwright (preenchimento e cliques reais)
+          PHANTOM ENGINE v4.0 — Playwright Local + Detecção Universal de Checkout
         </p>
       </div>
 

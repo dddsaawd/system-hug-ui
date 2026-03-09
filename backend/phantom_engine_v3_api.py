@@ -945,7 +945,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     await browser.close()
             except Exception:
                 pass
-            session.add_log("Sessao Browserless encerrada.", "info")
+            session.add_log("Sessao encerrada.", "info")
 
 
 # ─── Loop Principal da Engine ────────────────────────────────────────────────

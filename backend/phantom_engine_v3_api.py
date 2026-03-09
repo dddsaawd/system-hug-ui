@@ -612,25 +612,34 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     "--disable-component-extensions-with-background-pages",
                     "--disable-client-side-phishing-detection",
                     "--js-flags=--max-old-space-size=128",
-                    "--single-process",
                 ]
                 # Playwright local: proxy com auth deve ir no contexto, não no launch
                 launch_proxy = None
                 context_proxy = None
                 if proxy_config:
                     if "username" in proxy_config:
-                        # SOCKS5/HTTP com auth -> passa no contexto
                         context_proxy = proxy_config
                         session.add_log(f"Proxy com auth -> contexto", "info")
                     else:
-                        # Proxy sem auth -> pode ir no launch
                         launch_proxy = proxy_config
                 
-                browser = await p.chromium.launch(
-                    headless=True,
-                    args=launch_args,
-                    proxy=launch_proxy
-                )
+                # Retry launch até 3 vezes (Render free pode falhar por memória)
+                browser = None
+                for launch_attempt in range(3):
+                    try:
+                        browser = await p.chromium.launch(
+                            headless=True,
+                            args=launch_args,
+                            proxy=launch_proxy,
+                            timeout=30000,
+                        )
+                        break
+                    except Exception as launch_err:
+                        session.add_log(f"Launch tentativa {launch_attempt+1}/3 falhou: {str(launch_err)[:80]}", "error")
+                        if launch_attempt < 2:
+                            await asyncio.sleep(2)
+                        else:
+                            raise launch_err
                 session.add_log("Chromium local iniciado!", "success")
             else:
                 # === MODO BROWSERLESS ===

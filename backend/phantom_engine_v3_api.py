@@ -194,7 +194,7 @@ async def smart_fill_field(page, selectors: list[str], value: str, field_name: s
     for selector in selectors:
         try:
             field = page.locator(selector).first
-            if await field.is_visible(timeout=1500):
+            if await field.is_visible(timeout=500):
                 # Verifica se o campo ja tem valor (auto-preenchido pelo CEP)
                 current_val = await field.input_value() if await field.count() > 0 else ""
                 if current_val and len(current_val.strip()) > 2 and field_name in ("Rua", "Bairro", "Cidade", "Estado"):
@@ -220,7 +220,7 @@ async def smart_fill_field_by_label(page, label_texts: list[str], value: str, fi
         try:
             # Busca input proximo a um label com o texto
             field = page.get_by_label(label_text, exact=False).first
-            if await field.is_visible(timeout=1500):
+            if await field.is_visible(timeout=500):
                 current_val = ""
                 try:
                     current_val = await field.input_value()
@@ -246,142 +246,119 @@ async def smart_fill_field_by_label(page, label_texts: list[str], value: str, fi
 async def universal_click_button(page, session: EngineSession, etapa: int) -> bool:
     """
     Clica no botao de avancar/finalizar da etapa atual.
-    Busca em button, a, div, span — por texto parcial (case-insensitive).
+    Estrategia otimizada: busca rapida por texto, depois fallback.
     """
-    # Textos de botao ordenados por prioridade (mais especificos primeiro)
+    # Textos ordenados por prioridade (checkouts Texano + Imperio + genéricos)
     button_texts = [
-        # Finalizacao / Pagamento
-        "Gerar Pix", "Gerar pix", "GERAR PIX", "Gerar PIX",
-        "Finalizar compra", "FINALIZAR COMPRA", "Finalizar Compra",
-        "Finalizar pedido", "FINALIZAR PEDIDO", "Finalizar Pedido",
-        "Finalizar", "FINALIZAR",
-        "Comprar agora", "COMPRAR AGORA", "Comprar Agora",
-        "Comprar", "COMPRAR",
-        "Pagar agora", "PAGAR AGORA", "Pagar",
+        # Finalizacao
+        "Gerar Pix", "GERAR PIX",
+        "Finalizar compra", "FINALIZAR COMPRA",
+        "Finalizar pedido", "FINALIZAR PEDIDO",
+        "Comprar agora", "COMPRAR AGORA",
+        "Pagar agora", "PAGAR AGORA",
         "Concluir compra", "CONCLUIR COMPRA",
-        "Concluir", "CONCLUIR",
         "Confirmar pedido", "CONFIRMAR PEDIDO",
-        "Confirmar", "CONFIRMAR",
-        "Realizar pagamento", "REALIZAR PAGAMENTO",
-        "Efetuar pagamento", "EFETUAR PAGAMENTO",
-        "Fechar pedido", "FECHAR PEDIDO",
         "Gerar Boleto", "GERAR BOLETO",
-        "Place Order", "Submit",
-        # Navegacao entre etapas
+        # Navegacao
         "Ir para Pagamento", "IR PARA PAGAMENTO", "Ir para pagamento",
         "Ir para o pagamento", "IR PARA O PAGAMENTO",
-        "Ir para entrega", "IR PARA ENTREGA", "Ir para Entrega",
         "Escolher frete", "ESCOLHER FRETE", "Escolher Frete",
-        "Salvar e continuar", "SALVAR E CONTINUAR",
-        "Prosseguir", "PROSSEGUIR",
-        # Genericos
-        "Continuar", "CONTINUAR", "Continue",
-        "Avançar", "AVANÇAR", "Avancar", "AVANCAR",
+        "Ir para entrega", "IR PARA ENTREGA",
+        # Genéricos
+        "CONTINUAR", "Continuar", "Continue",
         "Próximo", "PRÓXIMO", "Proximo", "PROXIMO",
+        "Avançar", "AVANÇAR", "Avancar",
+        "Prosseguir", "PROSSEGUIR",
         "Next", "NEXT",
     ]
 
-    # Estrategia 1: Busca por texto exato em button
-    for text in button_texts:
-        try:
-            btn = page.locator(f'button:has-text("{text}")').first
-            if await btn.is_visible(timeout=800):
-                await btn.scroll_into_view_if_needed()
-                await asyncio.sleep(random.uniform(0.1, 0.3))
-                await btn.click(timeout=5000)
-                session.add_log(f"  Botao <button> '{text}' clicado!", "success")
-                return True
-        except Exception:
-            continue
-
-    # Estrategia 2: Busca em <a> (links estilizados como botao)
-    for text in button_texts:
-        try:
-            link = page.locator(f'a:has-text("{text}")').first
-            if await link.is_visible(timeout=800):
-                await link.scroll_into_view_if_needed()
-                await asyncio.sleep(random.uniform(0.1, 0.3))
-                await link.click(timeout=5000)
-                session.add_log(f"  Botao <a> '{text}' clicado!", "success")
-                return True
-        except Exception:
-            continue
-
-    # Estrategia 3: Busca em qualquer elemento clicavel (div, span) com role=button
-    for text in button_texts:
-        try:
-            el = page.locator(f'[role="button"]:has-text("{text}")').first
-            if await el.is_visible(timeout=800):
-                await el.scroll_into_view_if_needed()
-                await asyncio.sleep(random.uniform(0.1, 0.3))
-                await el.click(timeout=5000)
-                session.add_log(f"  Botao [role=button] '{text}' clicado!", "success")
-                return True
-        except Exception:
-            continue
-
-    # Estrategia 4: Busca por getByRole('button')
+    # ─── Estrategia 1: getByRole('button') — mais confiavel e rapido ───
     for text in button_texts:
         try:
             btn = page.get_by_role("button", name=text, exact=False).first
-            if await btn.is_visible(timeout=800):
+            if await btn.is_visible(timeout=300):
+                btn_text = (await btn.text_content() or "").strip().lower()
+                if any(w in btn_text for w in ["voltar", "back", "cancelar", "editar"]):
+                    continue
                 await btn.scroll_into_view_if_needed()
-                await asyncio.sleep(random.uniform(0.1, 0.3))
+                await asyncio.sleep(random.uniform(0.1, 0.25))
                 await btn.click(timeout=5000)
-                session.add_log(f"  Botao (role) '{text}' clicado!", "success")
+                session.add_log(f"  Botao '{text}' clicado!", "success")
                 return True
         except Exception:
             continue
 
-    # Estrategia 5: Busca por getByText em qualquer elemento
-    for text in button_texts[:20]:  # Apenas os mais especificos
-        try:
-            el = page.get_by_text(text, exact=False).first
-            if await el.is_visible(timeout=800):
-                tag = await el.evaluate("el => el.tagName")
-                if tag and tag.upper() in ("BUTTON", "A", "DIV", "SPAN", "INPUT"):
+    # ─── Estrategia 2: CSS selector button/a com has-text ───
+    for text in button_texts:
+        for tag in ["button", "a"]:
+            try:
+                el = page.locator(f'{tag}:has-text("{text}")').first
+                if await el.is_visible(timeout=300):
+                    el_text = (await el.text_content() or "").strip().lower()
+                    if any(w in el_text for w in ["voltar", "back", "cancelar", "editar"]):
+                        continue
                     await el.scroll_into_view_if_needed()
-                    await asyncio.sleep(random.uniform(0.1, 0.3))
+                    await asyncio.sleep(random.uniform(0.1, 0.25))
                     await el.click(timeout=5000)
-                    session.add_log(f"  Botao (text) <{tag}> '{text}' clicado!", "success")
+                    session.add_log(f"  Botao <{tag}> '{text}' clicado!", "success")
                     return True
-        except Exception:
-            continue
+            except Exception:
+                continue
 
-    # Estrategia 6: Fallback - qualquer button[type=submit] visivel
+    # ─── Estrategia 3: button[type=submit] visivel ───
     try:
         submit_btns = page.locator('button[type="submit"]')
         count = await submit_btns.count()
         for i in range(count):
             btn = submit_btns.nth(i)
-            if await btn.is_visible(timeout=1000):
+            if await btn.is_visible(timeout=500):
                 btn_text = (await btn.text_content() or "").strip()
-                if btn_text and "voltar" not in btn_text.lower() and "back" not in btn_text.lower():
+                if btn_text and not any(w in btn_text.lower() for w in ["voltar", "back", "cancelar"]):
                     await btn.scroll_into_view_if_needed()
-                    await asyncio.sleep(random.uniform(0.1, 0.3))
+                    await asyncio.sleep(random.uniform(0.1, 0.25))
                     await btn.click(timeout=5000)
-                    session.add_log(f"  Botao submit '{btn_text[:40]}' clicado!", "success")
+                    session.add_log(f"  Submit '{btn_text[:40]}' clicado!", "success")
                     return True
     except Exception:
         pass
 
-    # Estrategia 7: Fallback - qualquer button visivel que nao seja "Voltar"
+    # ─── Estrategia 4: qualquer button visivel (fallback) ───
     try:
         all_btns = page.locator("button")
         count = await all_btns.count()
+        skip_words = ["voltar", "back", "cancelar", "fechar", "close", "editar", "edit"]
         for i in range(count):
             btn = all_btns.nth(i)
-            if await btn.is_visible(timeout=800):
+            if await btn.is_visible(timeout=300):
                 btn_text = (await btn.text_content() or "").strip()
                 if btn_text and len(btn_text) > 2:
-                    lower = btn_text.lower()
-                    skip_words = ["voltar", "back", "cancelar", "fechar", "close", "x"]
-                    if not any(w in lower for w in skip_words):
+                    if not any(w in btn_text.lower() for w in skip_words):
                         await btn.scroll_into_view_if_needed()
-                        await asyncio.sleep(random.uniform(0.1, 0.3))
+                        await asyncio.sleep(random.uniform(0.1, 0.25))
                         await btn.click(timeout=5000)
-                        session.add_log(f"  Botao fallback '{btn_text[:40]}' clicado!", "success")
+                        session.add_log(f"  Fallback '{btn_text[:40]}' clicado!", "success")
                         return True
+    except Exception:
+        pass
+
+    # ─── Debug: listar botoes visiveis ───
+    try:
+        all_btns = page.locator("button")
+        count = await all_btns.count()
+        visible_texts = []
+        for i in range(min(count, 10)):
+            btn = all_btns.nth(i)
+            try:
+                if await btn.is_visible(timeout=200):
+                    txt = (await btn.text_content() or "").strip()[:30]
+                    if txt:
+                        visible_texts.append(txt)
+            except Exception:
+                pass
+        if visible_texts:
+            session.add_log(f"  DEBUG botoes visiveis: {visible_texts}", "info")
+        else:
+            session.add_log(f"  DEBUG: nenhum botao visivel na pagina", "info")
     except Exception:
         pass
 
@@ -650,8 +627,8 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
 
             # Navega para o checkout
             session.add_log(f"Navegando: {session.payload.target_url}", "info")
-            await page.goto(session.payload.target_url, wait_until="domcontentloaded", timeout=45000)
-            await asyncio.sleep(random.uniform(1.5, 2.5))
+            await page.goto(session.payload.target_url, wait_until="networkidle", timeout=60000)
+            await asyncio.sleep(random.uniform(2.0, 3.5))
 
             addr = get_random_address()
             cpf_digits = user_data["cpf"].replace(".", "").replace("-", "").replace(" ", "")

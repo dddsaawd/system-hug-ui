@@ -149,7 +149,7 @@ export default function EngineControl() {
           <Monitor className="h-6 w-6 text-primary" /> Navegador Fantasma
         </h1>
         <p className="text-sm text-muted-foreground">
-          PHANTOM ENGINE v3.0 — Automação de checkout com Playwright (preenchimento e cliques reais)
+          PHANTOM ENGINE v4.0 — Playwright Local + Detecção Universal de Checkout
         </p>
       </div>
 
@@ -171,7 +171,7 @@ export default function EngineControl() {
       {/* Fluxo de Automação */}
       <Card className="border-primary/20 bg-primary/5">
         <CardContent className="p-4">
-          <p className="text-xs font-semibold text-primary mb-2">FLUXO DE AUTOMAÇÃO v3.0</p>
+          <p className="text-xs font-semibold text-primary mb-2">FLUXO DE AUTOMAÇÃO v4.0 (LOCAL)</p>
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">1. Dados Pessoais</span>
             <span>→</span>

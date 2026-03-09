@@ -954,17 +954,20 @@ async def engine_loop(session: EngineSession):
         session.add_log("Nenhum CPF disponivel! Usando CPF generico.", "error")
         cpf_list = ["00000000000"]
 
-    proxy_list = payload.proxies
+    proxy_list = payload.proxies if payload.proxies else [""]
     proxy_idx = 0
     successes_on_current_proxy = 0
+    use_proxies = bool(payload.proxies)
 
     mode_label = "LOCAL (Chromium)" if (ENGINE_MODE == "local" or not BROWSERLESS_API_KEY) else "BROWSERLESS"
+    proxy_label = f"{len(payload.proxies)} proxies" if use_proxies else "SEM PROXY (IP direto)"
     session.add_log(
         f"Engine iniciada | {len(cpf_list)} CPFs | "
-        f"Intervalo: {payload.interval_seconds}s | Modo: {mode_label}",
+        f"Intervalo: {payload.interval_seconds}s | Modo: {mode_label} | {proxy_label}",
         "info",
     )
-    session.add_log(f"Rotacao de proxy a cada {payload.rotate_after_successes} sucesso(s)", "info")
+    if use_proxies:
+        session.add_log(f"Rotacao de proxy a cada {payload.rotate_after_successes} sucesso(s)", "info")
 
     while not session._stop_event.is_set():
         proxy = proxy_list[proxy_idx]

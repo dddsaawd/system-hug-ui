@@ -88,11 +88,6 @@ export default function EngineControl() {
       .map((p) => p.trim())
       .filter(Boolean);
 
-    if (proxies.length === 0) {
-      toast.error("Adicione pelo menos 1 proxy");
-      return;
-    }
-
     const cpfs = cpfsText
       .split("\n")
       .map((c) => c.trim())
@@ -220,7 +215,7 @@ export default function EngineControl() {
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>Proxies * (um por linha)</Label>
+                <Label>Proxies (opcional, um por linha)</Label>
                 <FileUploadButton
                   label="Carregar proxies.txt"
                   disabled={isRunning}
@@ -236,7 +231,7 @@ export default function EngineControl() {
                 disabled={isRunning}
               />
               <p className="text-xs text-muted-foreground">
-                Proxies são rotacionados automaticamente a cada sessão.
+                Proxies são rotacionados automaticamente. Sem proxy = IP direto do servidor.
                 {proxiesText && ` (${proxiesText.split("\n").filter(Boolean).length} carregados)`}
               </p>
             </div>

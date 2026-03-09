@@ -35,12 +35,10 @@ log = logging.getLogger("phantom_engine")
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 API_TOKEN = os.environ.get("API_TOKEN", "phantom-secret-token-2024")
+# Modo: "local" usa Chromium instalado no servidor, "browserless" usa chrome remoto
+ENGINE_MODE = os.environ.get("ENGINE_MODE", "local")  # "local" ou "browserless"
 BROWSERLESS_API_KEY = os.environ.get("BROWSERLESS_API_KEY", "")
-BROWSERLESS_BASE_URL = f"wss://chrome.browserless.io?token={BROWSERLESS_API_KEY}&timeout=60000"
-
-def build_browserless_url() -> str:
-    """Constroi a URL do Browserless.io sem proxy (para evitar erro 401 no plano free)."""
-    return BROWSERLESS_BASE_URL
+BROWSERLESS_BASE_URL = f"wss://chrome.browserless.io?token={BROWSERLESS_API_KEY}&timeout=30000"
 
 CPF_FILE = Path("cpfs.txt")
 
@@ -574,7 +572,7 @@ async def check_success(page, session: EngineSession) -> bool:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def run_checkout_session(session: EngineSession, proxy: str, user_data: dict):
-    """Executa uma sessao de checkout universal usando Browserless.io."""
+    """Executa uma sessao de checkout usando Playwright local ou Browserless."""
     try:
         from playwright.async_api import async_playwright
     except ImportError:
@@ -586,29 +584,20 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
     context = None
 
     async with async_playwright() as p:
-        session.add_log("Conectando ao Browserless.io...", "info")
         try:
-            ws_url = build_browserless_url()
-            browser = await p.chromium.connect_over_cdp(ws_url)
-
-            # Configura o proxy usando protocolo socks5h para suportar SOCKS5 com Auth nativamente
+            # Monta proxy config
             proxy_config = None
-            
             if proxy and proxy.strip():
                 proxy_clean = proxy.strip()
                 protocol = "http"
                 if "socks5://" in proxy.lower() or ":10324" in proxy:
-                    # O protocolo 'socks5h' faz o navegador resolver o DNS via proxy,
-                    # o que é essencial para autenticação SOCKS5 funcionar no Chromium.
-                    protocol = "socks5h"
-                
-                # Remove prefixos
+                    protocol = "socks5"
+
                 for prefix in ["http://", "https://", "socks5://", "socks4://", "socks5h://"]:
                     if proxy_clean.startswith(prefix):
                         proxy_clean = proxy_clean[len(prefix):]
                         break
-                
-                # Se tiver auth (user:pass@host:port)
+
                 if "@" in proxy_clean:
                     auth_part, server_part = proxy_clean.split("@")
                     username, password = auth_part.split(":")
@@ -619,8 +608,32 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     }
                 else:
                     proxy_config = {"server": f"{protocol}://{proxy_clean}"}
-                
-                session.add_log(f"Proxy configurado ({protocol}): {proxy_config['server']}", "info")
+
+                session.add_log(f"Proxy: {proxy_config['server']}", "info")
+
+            # === MODO LOCAL (Chromium no servidor) ===
+            if ENGINE_MODE == "local" or not BROWSERLESS_API_KEY:
+                session.add_log("Iniciando Chromium local...", "info")
+                launch_args = [
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--single-process",
+                ]
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=launch_args,
+                    proxy=proxy_config
+                )
+                session.add_log("Chromium local iniciado!", "success")
+            else:
+                # === MODO BROWSERLESS ===
+                session.add_log("Conectando ao Browserless.io...", "info")
+                ws_url = BROWSERLESS_BASE_URL
+                session.add_log(f"Timeout Browserless: 30000ms", "info")
+                browser = await p.chromium.connect_over_cdp(ws_url)
+                session.add_log("Browserless conectado!", "success")
 
             context = await browser.new_context(
                 user_agent=random.choice([
@@ -632,7 +645,6 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 viewport={"width": random.choice([1366, 1440, 1920]), "height": random.choice([768, 900, 1080])},
                 locale="pt-BR",
                 timezone_id="America/Sao_Paulo",
-                proxy=proxy_config
             )
             page = await context.new_page()
 
@@ -933,7 +945,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     await browser.close()
             except Exception:
                 pass
-            session.add_log("Sessao Browserless encerrada.", "info")
+            session.add_log("Sessao encerrada.", "info")
 
 
 # ─── Loop Principal da Engine ────────────────────────────────────────────────
@@ -951,9 +963,10 @@ async def engine_loop(session: EngineSession):
     proxy_idx = 0
     successes_on_current_proxy = 0
 
+    mode_label = "LOCAL (Chromium)" if (ENGINE_MODE == "local" or not BROWSERLESS_API_KEY) else "BROWSERLESS"
     session.add_log(
-        f"Engine iniciada | {len(proxy_list)} proxies | {len(cpf_list)} CPFs | "
-        f"Intervalo: {payload.interval_seconds}s | Browserless: ATIVO",
+        f"Engine iniciada | {len(cpf_list)} CPFs | "
+        f"Intervalo: {payload.interval_seconds}s | Modo: {mode_label}",
         "info",
     )
     session.add_log(f"Rotacao de proxy a cada {payload.rotate_after_successes} sucesso(s)", "info")
@@ -1033,16 +1046,17 @@ async def api_stop(session_id: str, _=Depends(verify_token)):
 
 @app.get("/api/health")
 async def health():
+    mode = "local" if (ENGINE_MODE == "local" or not BROWSERLESS_API_KEY) else "browserless"
     return {
         "status": "ok",
-        "engine": "PHANTOM ENGINE v3.9 UNIVERSAL",
-        "browserless": "connected",
+        "engine": "PHANTOM ENGINE v4.0 LOCAL",
+        "mode": mode,
         "sessions": len(sessions),
     }
 
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    log.info("Iniciando PHANTOM ENGINE v3.5 — Universal Checkout Engine")
-    log.info(f"Browserless: {BROWSERLESS_BASE_URL[:50]}...")
+    mode = "LOCAL (Chromium)" if (ENGINE_MODE == "local" or not BROWSERLESS_API_KEY) else "BROWSERLESS"
+    log.info(f"Iniciando PHANTOM ENGINE v4.0 — Modo: {mode}")
     uvicorn.run(app, host="0.0.0.0", port=8000)

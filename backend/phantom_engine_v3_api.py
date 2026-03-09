@@ -57,7 +57,7 @@ app.add_middleware(
 
 class StartPayload(BaseModel):
     target_url: str
-    proxies: list[str] = Field(min_length=1)
+    proxies: list[str] = Field(default=[])
     interval_seconds: int = Field(default=120, ge=1, le=3600)
     cpfs: Optional[list[str]] = None
     headless: bool = True

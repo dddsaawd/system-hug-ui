@@ -963,9 +963,10 @@ async def engine_loop(session: EngineSession):
     proxy_idx = 0
     successes_on_current_proxy = 0
 
+    mode_label = "LOCAL (Chromium)" if (ENGINE_MODE == "local" or not BROWSERLESS_API_KEY) else "BROWSERLESS"
     session.add_log(
-        f"Engine iniciada | {len(proxy_list)} proxies | {len(cpf_list)} CPFs | "
-        f"Intervalo: {payload.interval_seconds}s | Browserless: ATIVO",
+        f"Engine iniciada | {len(cpf_list)} CPFs | "
+        f"Intervalo: {payload.interval_seconds}s | Modo: {mode_label}",
         "info",
     )
     session.add_log(f"Rotacao de proxy a cada {payload.rotate_after_successes} sucesso(s)", "info")

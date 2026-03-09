@@ -3,7 +3,7 @@ import { z } from "zod";
 // Validation schemas
 export const startEngineSchema = z.object({
   target_url: z.string().trim().url({ message: "URL inválida" }).max(2048, { message: "URL muito longa" }),
-  proxies: z.array(z.string().trim().min(1)).min(1, { message: "Adicione pelo menos 1 proxy" }),
+  proxies: z.array(z.string().trim().min(1)).default([]),
   interval_seconds: z.number().min(1).max(3600).default(120),
   cpfs: z.array(z.string().trim()).optional(),
   headless: z.boolean().default(true),

@@ -88,11 +88,6 @@ export default function EngineControl() {
       .map((p) => p.trim())
       .filter(Boolean);
 
-    if (proxies.length === 0) {
-      toast.error("Adicione pelo menos 1 proxy");
-      return;
-    }
-
     const cpfs = cpfsText
       .split("\n")
       .map((c) => c.trim())

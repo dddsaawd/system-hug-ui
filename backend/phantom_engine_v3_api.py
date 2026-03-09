@@ -35,12 +35,10 @@ log = logging.getLogger("phantom_engine")
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 API_TOKEN = os.environ.get("API_TOKEN", "phantom-secret-token-2024")
+# Modo: "local" usa Chromium instalado no servidor, "browserless" usa chrome remoto
+ENGINE_MODE = os.environ.get("ENGINE_MODE", "local")  # "local" ou "browserless"
 BROWSERLESS_API_KEY = os.environ.get("BROWSERLESS_API_KEY", "")
-BROWSERLESS_BASE_URL = f"wss://chrome.browserless.io?token={BROWSERLESS_API_KEY}&timeout=60000"
-
-def build_browserless_url() -> str:
-    """Constroi a URL do Browserless.io sem proxy (para evitar erro 401 no plano free)."""
-    return BROWSERLESS_BASE_URL
+BROWSERLESS_BASE_URL = f"wss://chrome.browserless.io?token={BROWSERLESS_API_KEY}&timeout=30000"
 
 CPF_FILE = Path("cpfs.txt")
 

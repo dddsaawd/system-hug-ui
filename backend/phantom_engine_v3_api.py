@@ -598,14 +598,27 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     "--disable-gpu",
                     "--single-process",
                 ]
+                # Playwright local: proxy com auth deve ir no contexto, não no launch
+                launch_proxy = None
+                context_proxy = None
+                if proxy_config:
+                    if "username" in proxy_config:
+                        # SOCKS5/HTTP com auth -> passa no contexto
+                        context_proxy = proxy_config
+                        session.add_log(f"Proxy com auth -> contexto", "info")
+                    else:
+                        # Proxy sem auth -> pode ir no launch
+                        launch_proxy = proxy_config
+                
                 browser = await p.chromium.launch(
                     headless=True,
                     args=launch_args,
-                    proxy=proxy_config
+                    proxy=launch_proxy
                 )
                 session.add_log("Chromium local iniciado!", "success")
             else:
                 # === MODO BROWSERLESS ===
+                context_proxy = None
                 session.add_log("Conectando ao Browserless.io...", "info")
                 ws_url = BROWSERLESS_BASE_URL
                 session.add_log(f"Timeout Browserless: 30000ms", "info")
@@ -613,6 +626,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 session.add_log("Browserless conectado!", "success")
 
             context = await browser.new_context(
+                proxy=context_proxy if context_proxy else None,
                 user_agent=random.choice([
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
                     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",

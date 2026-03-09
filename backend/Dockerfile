@@ -6,7 +6,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir fastapi uvicorn pydantic playwright
 
 # Instala Chromium COMPLETO com todas as deps de sistema
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-pw-browsers
+ENV PLAYWRIGHT_BROWSERS_PATH=0
 RUN playwright install --with-deps chromium
 
 # Copia arquivos do backend

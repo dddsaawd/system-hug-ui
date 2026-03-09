@@ -194,7 +194,7 @@ async def smart_fill_field(page, selectors: list[str], value: str, field_name: s
     for selector in selectors:
         try:
             field = page.locator(selector).first
-            if await field.is_visible(timeout=1500):
+            if await field.is_visible(timeout=500):
                 # Verifica se o campo ja tem valor (auto-preenchido pelo CEP)
                 current_val = await field.input_value() if await field.count() > 0 else ""
                 if current_val and len(current_val.strip()) > 2 and field_name in ("Rua", "Bairro", "Cidade", "Estado"):

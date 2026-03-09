@@ -1057,6 +1057,6 @@ async def health():
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    log.info("Iniciando PHANTOM ENGINE v3.5 — Universal Checkout Engine")
-    log.info(f"Browserless: {BROWSERLESS_BASE_URL[:50]}...")
+    mode = "LOCAL (Chromium)" if (ENGINE_MODE == "local" or not BROWSERLESS_API_KEY) else "BROWSERLESS"
+    log.info(f"Iniciando PHANTOM ENGINE v4.0 — Modo: {mode}")
     uvicorn.run(app, host="0.0.0.0", port=8000)

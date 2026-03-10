@@ -2123,10 +2123,45 @@ async def health():
     mode = "local" if (ENGINE_MODE == "local" or not BROWSERLESS_API_KEY) else "browserless"
     return {
         "status": "ok",
-        "engine": "PHANTOM ENGINE v4.0 LOCAL",
+        "engine": "PHANTOM ENGINE v7.0 UNIVERSAL",
         "mode": mode,
         "sessions": len(sessions),
+        "features": ["browser", "direct_api", "zedy_token_resolver"],
     }
+
+
+class ResolveTokenPayload(BaseModel):
+    token: str
+
+@app.post("/api/zedy/resolve-token")
+async def api_resolve_zedy_token(payload: ResolveTokenPayload, _=Depends(verify_token)):
+    """Resolve um token Zedy: GET na página, extrai storeId, checkoutId, produto, gateways."""
+    token = payload.token.strip()
+    if not re.match(r'^Z-[A-Z0-9]+$', token, re.IGNORECASE):
+        raise HTTPException(status_code=400, detail="Token Zedy inválido")
+    
+    # Constroi URL a partir do token (usa domínio genérico — o redirect resolve)
+    # Tenta primeiro com o padrão seguro.*.com
+    checkout_url = f"https://seguro.texanostoreoficial.com/checkout/{token}"
+    
+    try:
+        resolved = await resolve_zedy_token_from_html(checkout_url)
+        if not resolved.get("storeId") and not resolved.get("checkoutId"):
+            raise HTTPException(status_code=404, detail="Token não resolveu nenhum dado")
+        
+        return {
+            "token": resolved.get("token", token),
+            "storeId": resolved.get("storeId", 0),
+            "checkoutId": resolved.get("checkoutId", 0),
+            "product": resolved.get("product", {}),
+            "store": resolved.get("store", {}),
+            "payment": resolved.get("payment", {}),
+            "shipping": resolved.get("shipping", {}),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao resolver token: {str(e)[:200]}")
 
 # ─── Main ────────────────────────────────────────────────────────────────────
 

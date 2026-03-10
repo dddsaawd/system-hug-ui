@@ -324,7 +324,18 @@ export default function EngineControl() {
                 />
                 <div className="flex items-center gap-1.5">
                   {headless ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-primary" />}
-                  <Label className="text-sm cursor-pointer">{headless ? "Invisível (headless)" : "Visível (com janela)"}</Label>
+                  <Label className="text-sm cursor-pointer">{headless ? "Invisível" : "Visível"}</Label>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 pb-1">
+                <Switch
+                  checked={captureNetwork}
+                  onCheckedChange={setCaptureNetwork}
+                  disabled={isRunning}
+                />
+                <div className="flex items-center gap-1.5">
+                  <Wifi className={`h-4 w-4 ${captureNetwork ? "text-primary" : "text-muted-foreground"}`} />
+                  <Label className="text-sm cursor-pointer">{captureNetwork ? "🔍 Captura de Rede" : "Rede OFF"}</Label>
                 </div>
               </div>
             </div>

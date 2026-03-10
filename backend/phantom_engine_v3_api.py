@@ -1302,14 +1302,111 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     except Exception:
                         continue
 
-            # ─── Loop Adaptativo Principal v5.5 ───
-            max_loops = 18
+            # ─── Helpers de Detecção de Transição v6.0 ───
+
+            async def get_dom_fingerprint() -> dict:
+                """Captura fingerprint do DOM atual para detectar transições de etapa."""
+                try:
+                    return await page.evaluate("""() => {
+                        const inputs = document.querySelectorAll('input:not([type=hidden]), select, textarea');
+                        const visibleInputs = [];
+                        for (const el of inputs) {
+                            const rect = el.getBoundingClientRect();
+                            if (rect.width > 0 && rect.height > 0 && rect.top < window.innerHeight + 200) {
+                                visibleInputs.push({
+                                    tag: el.tagName,
+                                    name: el.name || '',
+                                    type: el.type || '',
+                                    placeholder: el.placeholder || '',
+                                    id: el.id || '',
+                                });
+                            }
+                        }
+                        const buttons = document.querySelectorAll('button, a[role=button], input[type=submit]');
+                        const visibleBtns = [];
+                        for (const btn of buttons) {
+                            const rect = btn.getBoundingClientRect();
+                            if (rect.width > 0 && rect.height > 0) {
+                                visibleBtns.push((btn.textContent || '').trim().substring(0, 40));
+                            }
+                        }
+                        // Detect step indicators
+                        const stepIndicators = document.querySelectorAll('[class*="step"], [class*="etapa"], [class*="stage"], [data-step], [aria-current="step"]');
+                        let currentStep = '';
+                        for (const s of stepIndicators) {
+                            const cls = s.className || '';
+                            const text = (s.textContent || '').trim().substring(0, 50);
+                            if (cls.includes('active') || cls.includes('current') || s.getAttribute('aria-current')) {
+                                currentStep = text;
+                                break;
+                            }
+                        }
+                        // Also check h1/h2/h3 for step titles
+                        const headings = [];
+                        for (const h of document.querySelectorAll('h1, h2, h3')) {
+                            const rect = h.getBoundingClientRect();
+                            if (rect.width > 0 && rect.height > 0) {
+                                headings.push((h.textContent || '').trim().substring(0, 60));
+                            }
+                        }
+                        return {
+                            inputCount: visibleInputs.length,
+                            inputNames: visibleInputs.map(i => i.name || i.id || i.placeholder).filter(Boolean),
+                            buttonTexts: visibleBtns.filter(Boolean),
+                            currentStep: currentStep,
+                            headings: headings,
+                            url: window.location.href,
+                        };
+                    }""")
+                except Exception:
+                    return {"inputCount": 0, "inputNames": [], "buttonTexts": [], "currentStep": "", "headings": [], "url": ""}
+
+            def dom_changed(before: dict, after: dict) -> bool:
+                """Detecta se houve transição real de etapa (novos campos, headings diferentes)."""
+                if before["url"] != after["url"]:
+                    return True
+                if set(before["inputNames"]) != set(after["inputNames"]):
+                    return True
+                if before["currentStep"] and after["currentStep"] and before["currentStep"] != after["currentStep"]:
+                    return True
+                if before["headings"] != after["headings"]:
+                    return True
+                if abs(before["inputCount"] - after["inputCount"]) >= 2:
+                    return True
+                return False
+
+            async def wait_for_step_transition(pre_click_fp: dict, max_wait: float = 8.0) -> bool:
+                """Aguarda até que o DOM mude (nova etapa) ou timeout."""
+                start = time.time()
+                checks = 0
+                while time.time() - start < max_wait:
+                    await asyncio.sleep(0.8)
+                    checks += 1
+                    post_fp = await get_dom_fingerprint()
+                    if dom_changed(pre_click_fp, post_fp):
+                        new_fields = set(post_fp["inputNames"]) - set(pre_click_fp["inputNames"])
+                        removed_fields = set(pre_click_fp["inputNames"]) - set(post_fp["inputNames"])
+                        session.add_log(f"  ✅ Transição detectada! Novos campos: {list(new_fields)[:5]}", "success")
+                        if removed_fields:
+                            session.add_log(f"     Campos removidos: {list(removed_fields)[:5]}", "info")
+                        if post_fp["currentStep"]:
+                            session.add_log(f"     Etapa atual: {post_fp['currentStep'][:50]}", "info")
+                        if post_fp["headings"] != pre_click_fp["headings"]:
+                            session.add_log(f"     Titulo: {post_fp['headings'][:2]}", "info")
+                        return True
+                session.add_log(f"  ⏳ Sem transição após {max_wait}s ({checks} checks)", "info")
+                return False
+
+            # ─── Loop Adaptativo Principal v6.0 ───
+            max_loops = 22
             last_url = page.url
             stale_count = 0
-            last_filled_count = 0
+            step_number = 1
+            consecutive_same_fields = 0
+            last_field_set = set()
 
             for loop_num in range(1, max_loops + 1):
-                session.add_log(f"═══ SCAN {loop_num}/{max_loops} ═══", "info")
+                session.add_log(f"═══ SCAN {loop_num}/{max_loops} (Etapa {step_number}) ═══", "info")
 
                 # 0. Verificar sucesso
                 if await check_success(page, session):
@@ -1320,38 +1417,98 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 # 1. Fechar popups/modais que bloqueiam
                 await handle_popups_and_modals()
 
-                # 2. Scan inteligente DOM + preenchimento
+                # 2. Capturar fingerprint ANTES do scan
+                pre_scan_fp = await get_dom_fingerprint()
+
+                # 3. Scan inteligente DOM + preenchimento
                 filled = await intelligent_scan_and_fill()
                 filled_count = len(filled)
+                current_field_set = set(filled.keys()) if filled else set()
+
                 if filled:
                     session.add_log(f"  Campos: {list(filled.keys())}", "info")
 
-                # 3. Elementos interativos (radios, selects, PIX, frete)
+                # Detectar se estamos vendo os mesmos campos repetidamente
+                if current_field_set and current_field_set == last_field_set:
+                    consecutive_same_fields += 1
+                else:
+                    consecutive_same_fields = 0
+                last_field_set = current_field_set
+
+                # 4. Elementos interativos (radios, selects, PIX, frete)
                 radios_done = await handle_interactive_elements()
 
-                # 4. Pausa humana
+                # 5. Pausa humana
                 await asyncio.sleep(random.uniform(0.3, 0.8))
 
-                # 5. Clicar melhor botão
-                clicked = await universal_click_button(page, session, loop_num)
+                # 6. Decidir se deve clicar botão
+                # Só clica se: preencheu algo OU interagiu com elementos OU está preso nos mesmos campos
+                should_click = bool(filled) or radios_done or consecutive_same_fields >= 2
 
-                # 6. Detecção de progresso
+                clicked = False
+                if should_click:
+                    # Capturar fingerprint ANTES do clique para detectar transição
+                    pre_click_fp = await get_dom_fingerprint()
+                    clicked = await universal_click_button(page, session, loop_num)
+
+                    if clicked:
+                        # 7. AGUARDAR TRANSIÇÃO DE ETAPA (principal melhoria)
+                        transitioned = await wait_for_step_transition(pre_click_fp)
+
+                        if transitioned:
+                            step_number += 1
+                            consecutive_same_fields = 0
+                            last_field_set = set()
+                            # Espera extra para campos React/RSC renderizarem
+                            await asyncio.sleep(random.uniform(1.0, 2.0))
+                            # Verificar sucesso imediato pós-transição
+                            if await check_success(page, session):
+                                session.add_log("VENDA GERADA com sucesso!", "success")
+                                session.successes += 1
+                                return True
+                            # Continua para próximo scan imediatamente
+                            continue
+                        else:
+                            # Não houve transição — pode ser validação falhando
+                            session.add_log("  ⚠️ Clicou mas não avançou — possível erro de validação", "info")
+                            # Tenta ler mensagens de erro na página
+                            try:
+                                errors = await page.evaluate("""() => {
+                                    const errEls = document.querySelectorAll('[class*="error"], [class*="invalid"], [role="alert"], .text-red-500, .text-destructive');
+                                    const msgs = [];
+                                    for (const el of errEls) {
+                                        const t = (el.textContent || '').trim();
+                                        if (t && t.length > 3 && t.length < 200) msgs.push(t);
+                                    }
+                                    return msgs.slice(0, 3);
+                                }""")
+                                if errors:
+                                    session.add_log(f"  ❌ Erros na página: {errors}", "error")
+                            except Exception:
+                                pass
+                            await asyncio.sleep(random.uniform(1.5, 2.5))
+
+                # 8. Detecção de progresso
                 any_action = bool(filled) or radios_done or clicked
                 if not any_action:
                     stale_count += 1
                     session.add_log(f"  Sem acao possivel (stale #{stale_count})", "info")
-                    if stale_count >= 5:
+                    if stale_count >= 6:
                         session.add_log("  Sem progresso. Encerrando.", "error")
                         break
+                    # Scroll down para revelar campos escondidos
+                    if stale_count >= 2:
+                        try:
+                            await page.evaluate("window.scrollBy(0, 300)")
+                            session.add_log("  📜 Scroll para revelar campos...", "info")
+                        except Exception:
+                            pass
                     await asyncio.sleep(2.0)
                     continue
                 else:
                     stale_count = 0
 
-                # 7. Aguardar transição
-                await asyncio.sleep(random.uniform(1.5, 3.0))
-
-                # 8. Detectar mudança de URL
+                # 9. Detectar mudança de URL (para SPAs que mudam URL entre etapas)
                 current_url = page.url
                 if current_url != last_url:
                     session.add_log(f"  Navegou: {current_url[:80]}", "info")
@@ -1361,11 +1518,15 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     except Exception:
                         await asyncio.sleep(2.0)
 
-                # 9. Verificar sucesso pós-ação
+                # 10. Verificar sucesso pós-ação
                 if await check_success(page, session):
                     session.add_log("VENDA GERADA com sucesso!", "success")
                     session.successes += 1
                     return True
+
+                # 11. Aguardar entre scans (menor se não clicou)
+                if not clicked:
+                    await asyncio.sleep(random.uniform(0.5, 1.5))
 
             # ═══ FIM DO LOOP ═══
             session.add_log("Verificacao final...", "info")

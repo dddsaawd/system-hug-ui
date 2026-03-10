@@ -129,6 +129,7 @@ class EngineSession:
         self.logs: list[dict] = []
         self.task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
+        self.captured_requests: list[dict] = []  # Network capture
 
     def add_log(self, message: str, log_type: str = "info"):
         self.logs.append({

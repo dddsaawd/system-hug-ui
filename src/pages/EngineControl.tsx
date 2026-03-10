@@ -28,6 +28,7 @@ export default function EngineControl() {
   const [intervalSec, setIntervalSec] = useState(120);
   const [headless, setHeadless] = useState(true);
   const [rotateAfter, setRotateAfter] = useState(1);
+  const [isProductUrl, setIsProductUrl] = useState(false);
 
   const [sessionId, setSessionId] = useState<string | null>(
     () => localStorage.getItem("phantom_session_id")
@@ -99,6 +100,7 @@ export default function EngineControl() {
       interval_seconds: intervalSec,
       headless,
       rotate_after_successes: rotateAfter,
+      is_product_url: isProductUrl,
       ...(cpfs.length > 0 ? { cpfs } : {}),
     };
 
@@ -166,8 +168,14 @@ export default function EngineControl() {
       {/* Fluxo de Automação */}
       <Card className="border-primary/20 bg-primary/5">
         <CardContent className="p-4">
-          <p className="text-xs font-semibold text-primary mb-2">FLUXO DE AUTOMAÇÃO v4.0 (LOCAL)</p>
+          <p className="text-xs font-semibold text-primary mb-2">FLUXO DE AUTOMAÇÃO v4.3 (LOCAL)</p>
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            {isProductUrl && (
+              <>
+                <span className="rounded bg-chart-warning/10 px-2 py-1 text-chart-warning font-medium">0. Produto → Carrinho</span>
+                <span>→</span>
+              </>
+            )}
             <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">1. Dados Pessoais</span>
             <span>→</span>
             <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">2. CPF / Entrega</span>
@@ -203,14 +211,34 @@ export default function EngineControl() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label>URL do Checkout *</Label>
+              <div className="flex items-center justify-between">
+                <Label>{isProductUrl ? "URL do Produto *" : "URL do Checkout *"}</Label>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={isProductUrl}
+                    onCheckedChange={setIsProductUrl}
+                    disabled={isRunning}
+                  />
+                  <Label className="text-xs cursor-pointer text-muted-foreground">
+                    {isProductUrl ? "🛒 Link de Produto" : "💳 Link de Checkout"}
+                  </Label>
+                </div>
+              </div>
               <Input
                 value={targetUrl}
                 onChange={(e) => setTargetUrl(e.target.value)}
-                placeholder="https://seguro.loja.com/checkout/..."
+                placeholder={isProductUrl
+                  ? "https://loja.com/produto/nome-do-produto"
+                  : "https://seguro.loja.com/checkout/..."
+                }
                 disabled={isRunning}
               />
-              <p className="text-xs text-muted-foreground">URL completa da página de checkout alvo.</p>
+              <p className="text-xs text-muted-foreground">
+                {isProductUrl
+                  ? "O motor vai abrir o produto, clicar em Comprar, passar pelo carrinho e chegar no checkout automaticamente."
+                  : "URL completa da página de checkout alvo."
+                }
+              </p>
             </div>
 
             <div className="space-y-2">

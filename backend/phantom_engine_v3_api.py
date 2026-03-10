@@ -1585,6 +1585,10 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
 
                 # 3. Scan inteligente DOM + preenchimento
                 filled = await intelligent_scan_and_fill()
+                
+                # 3.5 Se preencheu CEP, aguarda expansão de endereço e preenche
+                filled = await wait_for_address_expansion_after_cep(filled)
+                
                 filled_count = len(filled)
                 current_field_set = set(filled.keys()) if filled else set()
 

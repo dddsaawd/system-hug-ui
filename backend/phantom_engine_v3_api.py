@@ -98,6 +98,7 @@ class StartPayload(BaseModel):
     cpfs: Optional[list[str]] = None
     headless: bool = True
     rotate_after_successes: int = Field(default=1, ge=1, le=100)
+    is_product_url: bool = Field(default=False)  # True = navega pelo produto/carrinho antes
 
 class LogEntry(BaseModel):
     timestamp: str

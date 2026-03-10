@@ -623,9 +623,18 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                         proxy_clean = proxy_clean[len(prefix):]
                         break
 
+                # Auto-detect formato ip:port:user:pass
+                if "@" not in proxy_clean:
+                    parts = proxy_clean.split(":")
+                    if len(parts) == 4:
+                        # Formato: ip:port:user:pass -> converte para user:pass@ip:port
+                        ip, port, username, password = parts
+                        proxy_clean = f"{username}:{password}@{ip}:{port}"
+                        session.add_log(f"Proxy auto-convertido: ip:port:user:pass -> formato padrao", "info")
+
                 if "@" in proxy_clean:
-                    auth_part, server_part = proxy_clean.split("@")
-                    username, password = auth_part.split(":")
+                    auth_part, server_part = proxy_clean.split("@", 1)
+                    username, password = auth_part.split(":", 1)
                     proxy_config = {
                         "server": f"{protocol}://{server_part}",
                         "username": username,

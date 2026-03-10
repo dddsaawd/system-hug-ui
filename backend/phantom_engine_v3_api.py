@@ -946,6 +946,8 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             continue
                     
                     etapas_completadas.add("dados_pessoais")
+                    if step == "dados_pessoais_com_cep":
+                        etapas_completadas.add("cep")
                     session.add_log("  Aguardando proxima etapa...", "info")
                     await asyncio.sleep(random.uniform(2.0, 3.5))
                     continue

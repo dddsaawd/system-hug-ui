@@ -35,15 +35,17 @@ log = logging.getLogger("phantom_engine")
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 API_TOKEN = os.environ.get("API_TOKEN", "phantom-secret-token-2024")
-# Modo: "local" usa Chromium instalado no servidor, "browserless" usa chrome remoto
-ENGINE_MODE = os.environ.get("ENGINE_MODE", "local")  # "local" ou "browserless"
+ENGINE_MODE = os.environ.get("ENGINE_MODE", "local")
 BROWSERLESS_API_KEY = os.environ.get("BROWSERLESS_API_KEY", "")
 BROWSERLESS_BASE_URL = f"wss://chrome.browserless.io?token={BROWSERLESS_API_KEY}&timeout=30000"
+
+# Garante que o Playwright encontre os browsers no path correto
+os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "/ms-playwright")
 
 CPF_FILE = Path("cpfs.txt")
 
 # ─── App FastAPI ──────────────────────────────────────────────────────────────
-app = FastAPI(title="PHANTOM ENGINE v3.9 UNIVERSAL", version="3.9.0")
+app = FastAPI(title="PHANTOM ENGINE v4.0 UNIVERSAL", version="4.0.0")
 
 app.add_middleware(
     CORSMiddleware,

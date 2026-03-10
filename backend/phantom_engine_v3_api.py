@@ -1862,7 +1862,22 @@ async def resolve_zedy_token_from_html(checkout_url: str, proxy: str = "") -> di
 async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_data: dict) -> bool:
     """
     Executa checkout Zedy via Server Actions HTTP diretas — sem navegador.
-    Fluxo: GET token → POST init → POST dados pessoais → POST CEP → POST pagamento
+    
+    Arquitetura confirmada via network capture:
+    
+    Camada A — API interna do checkout (Server Actions Next.js RSC):
+      - POST /checkout/[token] com header next-action
+      - Payloads em arrays: [storeId, checkoutId, {dados}]
+      
+    Camada B — APIs externas de gateway (chamadas pelo backend do checkout):
+      - PIX: https://api.primecashbrasil.com/v1
+      - Cartão: https://api.conta.pagou.ai/v1
+      
+    Fluxo de Server Actions (4 etapas):
+      1. Cart Init:      [storeId, [products], checkoutId, price]
+      2. Dados pessoais: [storeId, checkoutId, {email, name, phone}]
+      3. CEP/Endereço:   [storeId, checkoutId, {zipcode, address, ...cpf}]
+      4. Pagamento:      [storeId, checkoutId, {paymentMethod, cpf}]
     """
     config = session.payload.direct_api_config
     if not config:
@@ -1875,7 +1890,7 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
     session.add_log(f"🔗 Modo API Direta — Token: {token[:15]}...", "info")
     
     try:
-        # PASSO 1: Resolver token (GET página + extrair dados hidratados)
+        # ═══ PASSO 1: Resolver token (GET página + extrair dados hidratados) ═══
         session.add_log("📡 Resolvendo token via GET...", "info")
         resolved = await resolve_zedy_token_from_html(checkout_url, proxy)
         
@@ -1887,17 +1902,32 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
             return False
         
         session.add_log(f"✅ Resolvido: storeId={store_id} checkoutId={checkout_id}", "success")
-        session.add_log(f"   Produto: {resolved['product'].get('title', 'N/A')[:40]} — R${resolved['product'].get('price', 0)}", "info")
+        
+        product_info = resolved.get("product", {})
+        product_title = product_info.get("title", "N/A")[:40]
+        product_price = product_info.get("price", 0)
+        product_id = product_info.get("productId", 0)
+        variant_id = product_info.get("variantId", 0)
+        quantity = product_info.get("quantity", 1)
+        
+        session.add_log(f"   Produto: {product_title} — R${product_price}", "info")
         
         # Cookies e headers base para Server Actions
         cookies = resolved.get("cookies", {})
         action_ids = resolved.get("actionIds", [])
         
+        if action_ids:
+            session.add_log(f"   Action IDs encontrados: {len(action_ids)}", "info")
+        else:
+            session.add_log("⚠️ Nenhum action ID encontrado — usando POST direto", "info")
+        
+        origin = re.match(r'(https?://[^/]+)', checkout_url).group(1)
+        
         base_headers = {
             "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
             "Accept": "text/x-component",
             "Content-Type": "text/plain;charset=UTF-8",
-            "Origin": re.match(r'(https?://[^/]+)', checkout_url).group(1),
+            "Origin": origin,
             "Referer": checkout_url,
             "Next-Router-State-Tree": "",
         }
@@ -1909,7 +1939,46 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
         
         async with httpx.AsyncClient(follow_redirects=True, timeout=30, proxy=proxy_url, cookies=cookies) as client:
             
-            # PASSO 2: Server Action — submeter dados pessoais
+            # ═══ PASSO 1.5: Cart Init (replicar o POST inicial do carrinho) ═══
+            # Payload capturado: [storeId, [{products}], checkoutId, price]
+            session.add_log("📤 Inicializando carrinho...", "info")
+            
+            cart_product = {
+                "id": product_info.get("productId", 0),  # usar o ID real do produto
+                "productId": product_id,
+                "shopifyProductId": variant_id,
+                "quantity": quantity,
+            }
+            
+            cart_init_payload = json.dumps([store_id, [cart_product], checkout_id, product_price])
+            
+            headers_init = {**base_headers}
+            if action_ids:
+                headers_init["Next-Action"] = action_ids[0]
+            
+            resp_init = await client.post(checkout_url, content=cart_init_payload, headers=headers_init)
+            session.add_log(f"   Cart init: {resp_init.status_code}", "info" if resp_init.status_code == 200 else "error")
+            
+            await asyncio.sleep(random.uniform(0.3, 0.8))
+            
+            # ═══ PASSO 1.6: Disparar tracking (InitiateCheckout + PageView) ═══
+            # Replicar os eventos de tracking para autenticidade da sessão
+            try:
+                tracking_url = "https://mpc2-prod-23-is5qnl632q-ue.a.run.app/events?cee=no"
+                for event_name in ["InitiateCheckout", "PageView"]:
+                    tracking_payload = {
+                        "event_name": event_name,
+                        "conversion_value": {"value": product_price, "currency": "BRL"},
+                    }
+                    await client.post(tracking_url, json=tracking_payload, timeout=5)
+                session.add_log("   Tracking events disparados", "info")
+            except Exception:
+                pass  # tracking falhar não é crítico
+            
+            await asyncio.sleep(random.uniform(0.5, 1.0))
+            
+            # ═══ PASSO 2: Server Action — submeter dados pessoais ═══
+            # Payload capturado: [storeId, checkoutId, {email, name, phone}]
             session.add_log("📤 Enviando dados pessoais...", "info")
             personal_payload = json.dumps([
                 store_id, checkout_id,
@@ -1921,16 +1990,26 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
             ])
             
             headers_sa = {**base_headers}
-            if action_ids:
+            if len(action_ids) > 1:
+                headers_sa["Next-Action"] = action_ids[1]
+            elif action_ids:
                 headers_sa["Next-Action"] = action_ids[0]
             
             resp1 = await client.post(checkout_url, content=personal_payload, headers=headers_sa)
             session.add_log(f"   Resposta dados pessoais: {resp1.status_code}", "info" if resp1.status_code == 200 else "error")
             
+            # Disparar tracking InputData
+            try:
+                tracking_payload = {"event_name": "InputData"}
+                await client.post(tracking_url, json=tracking_payload, timeout=5)
+            except Exception:
+                pass
+            
             await asyncio.sleep(random.uniform(0.5, 1.5))
             
-            # PASSO 3: Server Action — submeter CEP e endereço
-            if resolved["shipping"].get("requiresZipcode") or config.zipcode:
+            # ═══ PASSO 3: Server Action — CEP + endereço + CPF ═══
+            # Payload capturado: [storeId, checkoutId, {zipcode, address, number, complement, neighborhood, city, state, cpf}]
+            if resolved["shipping"].get("requiresZipcode") or config.zipcode or True:  # sempre enviar
                 session.add_log("📤 Enviando CEP e endereço...", "info")
                 zipcode = config.zipcode or addr["cep"]
                 
@@ -1949,23 +2028,35 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
                 ])
                 
                 headers_sa2 = {**base_headers}
-                if len(action_ids) > 1:
+                if len(action_ids) > 2:
+                    headers_sa2["Next-Action"] = action_ids[2]
+                elif len(action_ids) > 1:
                     headers_sa2["Next-Action"] = action_ids[1]
                 
                 resp2 = await client.post(checkout_url, content=address_payload, headers=headers_sa2)
                 session.add_log(f"   Resposta endereço: {resp2.status_code}", "info" if resp2.status_code == 200 else "error")
                 
+                # Parsear resposta para obter opções de frete
+                resp2_text = resp2.text
+                shipping_methods = re.findall(r'"shipping_method_id"\s*:\s*"?(\d+)"?', resp2_text)
+                if not shipping_methods:
+                    shipping_methods = re.findall(r'"id"\s*:\s*"?(\d+)"?', resp2_text)
+                
                 await asyncio.sleep(random.uniform(0.5, 1.5))
             
-            # PASSO 4: Server Action — selecionar frete (primeira opção)
+            # ═══ PASSO 4: Server Action — selecionar frete ═══
             session.add_log("📤 Selecionando frete...", "info")
+            shipping_method_id = shipping_methods[0] if shipping_methods else "0"
+            
             shipping_payload = json.dumps([
                 store_id, checkout_id,
-                {"shippingMethodId": "0"}  # primeira opção
+                {"shippingMethodId": shipping_method_id}
             ])
             
             headers_sa3 = {**base_headers}
-            if len(action_ids) > 2:
+            if len(action_ids) > 3:
+                headers_sa3["Next-Action"] = action_ids[3]
+            elif len(action_ids) > 2:
                 headers_sa3["Next-Action"] = action_ids[2]
             
             resp3 = await client.post(checkout_url, content=shipping_payload, headers=headers_sa3)
@@ -1973,9 +2064,13 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
             
             await asyncio.sleep(random.uniform(0.5, 1.5))
             
-            # PASSO 5: Server Action — finalizar com pagamento
+            # ═══ PASSO 5: Server Action — finalizar com pagamento ═══
+            # O checkout internamente chama o gateway:
+            #   PIX → https://api.primecashbrasil.com/v1
+            #   Cartão → https://api.conta.pagou.ai/v1
             payment_method = config.payment_method or "pix"
             session.add_log(f"📤 Finalizando pedido com {payment_method.upper()}...", "info")
+            session.add_log(f"   Gateway: {'Prime Cash' if payment_method == 'pix' else 'Pagou.ai'}", "info")
             
             payment_payload = json.dumps([
                 store_id, checkout_id,
@@ -1986,27 +2081,39 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
             ])
             
             headers_sa4 = {**base_headers}
-            if len(action_ids) > 3:
+            if len(action_ids) > 4:
+                headers_sa4["Next-Action"] = action_ids[4]
+            elif len(action_ids) > 3:
                 headers_sa4["Next-Action"] = action_ids[3]
             
             resp4 = await client.post(checkout_url, content=payment_payload, headers=headers_sa4)
-            resp4_text = resp4.text[:500]
+            resp4_text = resp4.text[:1000]
             session.add_log(f"   Resposta pagamento: {resp4.status_code}", "info" if resp4.status_code == 200 else "error")
             
-            # Verificar sucesso
-            success_indicators = ["pix", "qr", "pedido", "sucesso", "gerado", "pagamento", "obrigado", "aguardando"]
+            # ═══ Verificar sucesso ═══
+            success_indicators = [
+                "pix", "qr", "qr_code", "pedido", "sucesso", "gerado",
+                "pagamento", "obrigado", "aguardando", "primecash",
+                "cobranca", "copy_paste", "brcode", "txid",
+            ]
+            
             if any(ind in resp4_text.lower() for ind in success_indicators):
                 session.add_log("🎯 VENDA GERADA VIA API DIRETA!", "success")
+                
+                # Tentar extrair dados do PIX da resposta
+                pix_code = re.search(r'"(?:brcode|copy_paste|pix_code|qr_code_text)"\s*:\s*"([^"]+)"', resp4_text)
+                if pix_code:
+                    session.add_log(f"   PIX: {pix_code.group(1)[:50]}...", "success")
+                
                 session.successes += 1
                 return True
             elif resp4.status_code == 200:
-                session.add_log(f"   Resposta (preview): {resp4_text[:200]}", "info")
-                # Status 200 pode ser sucesso mesmo sem indicador textual
+                session.add_log(f"   Response preview: {resp4_text[:300]}", "info")
                 session.add_log("✅ Checkout completado (status 200)", "success")
                 session.successes += 1
                 return True
             else:
-                session.add_log(f"❌ Falha: {resp4_text[:200]}", "error")
+                session.add_log(f"❌ Falha: {resp4_text[:300]}", "error")
                 session.failures += 1
                 return False
                 

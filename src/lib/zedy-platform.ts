@@ -115,6 +115,75 @@ export const ZEDY_CONSTANTS = {
     "next-router-state-tree": "", // preenchido dinamicamente
   },
   
+  /**
+   * Gateways de pagamento confirmados via network capture.
+   * 
+   * Camada A (Checkout interno): Server Actions → POST /checkout/[token]
+   * Camada B (Gateway externo): chamado pelo backend do checkout
+   */
+  GATEWAYS: {
+    pix: {
+      name: "Prime Cash",
+      apiUrl: "https://api.primecashbrasil.com/v1",
+      description: "Gateway PIX — cria cobrança e retorna QR code",
+    },
+    credit_card: {
+      name: "Pagou.ai",
+      apiUrl: "https://api.conta.pagou.ai/v1",
+      description: "Gateway Cartão — processa transações de crédito",
+      scripts: [
+        "https://api.conta.pagou.ai/v1/js",
+        "https://api.conta.pagou.ai/v1/fingerprint.js",
+      ],
+    },
+  },
+  
+  /**
+   * Endpoints de tracking/analytics usados pelo checkout (para replicação).
+   * Enviar esses eventos aumenta a autenticidade da sessão.
+   */
+  TRACKING: {
+    /** MPC2 — tracking de conversão Facebook/Meta */
+    mpc2: "https://mpc2-prod-23-is5qnl632q-ue.a.run.app/events",
+    /** StatusLane — monitoring de incidentes */
+    statuslane: "https://statuslane.dev/api/incidents",
+    /** Wetracked — funnel tracking */
+    wetracked: "https://pixel.wetracked.io/funnel/init.js",
+  },
+  
+  /**
+   * Eventos de tracking capturados do checkout real.
+   * Disparados via POST para o endpoint MPC2.
+   */
+  TRACKING_EVENTS: [
+    "InitiateCheckout",
+    "PageView",
+    "InputData",
+  ] as string[],
+  
+  /**
+   * Estrutura de payload dos Server Actions (confirmada via network capture).
+   * 
+   * Etapa 1 (Init carrinho):
+   *   POST [storeId, [products], checkoutId, price]
+   *   Body: [28515, [{"id":214831242,"productId":21972776,...}], 44012512, 159.9]
+   * 
+   * Etapa 2 (Dados pessoais):
+   *   POST [storeId, checkoutId, {email, name, phone}]
+   * 
+   * Etapa 3 (CEP/Endereço):
+   *   POST [storeId, checkoutId, {zipcode, address, number, ...}]
+   * 
+   * Etapa 4 (Pagamento):
+   *   POST [storeId, checkoutId, {paymentMethod, cpf}]
+   * 
+   * Response inclui UTMTrack com session ID e tipoPaid.
+   */
+  SERVER_ACTION_FLOW: {
+    steps: ["cart_init", "personal_data", "address_shipping", "payment_finalize"],
+    payloadFormat: "array", // [storeId, checkoutId, {data}]
+  },
+
   /** Lojas conhecidas (cache de resolução) */
   KNOWN_STORES: {
     "texano-2602": {
@@ -122,8 +191,9 @@ export const ZEDY_CONSTANTS = {
       name: "Texano Store",
       shopUrl: "https://texanostoreoficial.com",
       apiBase: "https://checkout.vendeagora.com/api",
+      storeId: 28515,
     },
-  } as Record<string, ZedyStore>,
+  } as Record<string, ZedyStore & { storeId?: number }>,
 } as const;
 
 // ─── Utilidades ────────────────────────────────────────────────────────

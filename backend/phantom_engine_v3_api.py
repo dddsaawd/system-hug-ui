@@ -875,7 +875,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 return "desconhecido"
 
             # ─── Execucao sequencial das etapas ───
-            max_loops = 8
+            max_loops = 12
             etapas_completadas = set()
 
             for loop_num in range(1, max_loops + 1):

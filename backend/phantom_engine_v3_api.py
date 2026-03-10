@@ -1146,12 +1146,22 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 # NOME — mais genérico, verificar por último
                 if any(k in signals for k in ['full_name', 'fullname', 'customer_name', 'nome completo', 'full name']):
                     return ('name', 95)
-                if field_info['autocomplete'] in ['name', 'given-name', 'family-name']:
+                if field_info['autocomplete'] in ['name', 'given-name', 'family-name', 'cc-name']:
                     return ('name', 90)
                 if 'nome' in signals and not any(k in signals for k in ['sobre', 'last', 'user']):
                     return ('name', 80)
                 if field_info['name'] == 'name' or field_info['id'] == 'name':
                     return ('name', 85)
+                # Zedy e outros: placeholder ou label com "nome", "seu nome", "name"
+                if any(k in signals for k in ['seu nome', 'your name', 'nome e sobrenome', 'first name']):
+                    return ('name', 85)
+                # Campo text genérico no topo da página que não é nenhum outro tipo
+                if inp_type == 'text' and field_info.get('top', 999) < 400:
+                    # Se placeholder ou label tem "nome" de qualquer forma
+                    pl = field_info['placeholder'].lower()
+                    lb = field_info['labelText'].lower()
+                    if any(k in pl for k in ['nome', 'name']) or any(k in lb for k in ['nome', 'name']):
+                        return ('name', 75)
 
                 return ('unknown', 0)
 
@@ -1194,6 +1204,16 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
 
                 if not fields:
                     return filled
+
+                # DEBUG: mostra todos os campos raw detectados
+                for f in fields[:15]:
+                    ftype, fscore = classify_field(f)
+                    session.add_log(
+                        f"  🔎 [{ftype}:{fscore}] name={f['name'][:20]} id={f['id'][:20]} "
+                        f"ph={f['placeholder'][:20]} label={f['labelText'][:25]} "
+                        f"type={f['type']} top={int(f.get('top', 0))}",
+                        "info"
+                    )
 
                 # Classifica todos os campos
                 classified = []

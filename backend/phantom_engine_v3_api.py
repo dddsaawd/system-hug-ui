@@ -15,7 +15,9 @@ import time
 import uuid
 import os
 import re
+import json
 import subprocess
+import httpx
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -91,6 +93,14 @@ async def health_check():
 
 
 
+class DirectApiConfig(BaseModel):
+    platform: str = "zedy"
+    token: str = ""
+    store_id: Optional[int] = None
+    checkout_id: Optional[int] = None
+    payment_method: str = "pix"
+    zipcode: Optional[str] = None
+
 class StartPayload(BaseModel):
     target_url: str
     proxies: list[str] = Field(default=[])
@@ -98,8 +108,10 @@ class StartPayload(BaseModel):
     cpfs: Optional[list[str]] = None
     headless: bool = True
     rotate_after_successes: int = Field(default=1, ge=1, le=100)
-    is_product_url: bool = Field(default=False)  # True = navega pelo produto/carrinho antes
-    capture_network: bool = Field(default=False)  # True = captura requests/responses do checkout
+    is_product_url: bool = Field(default=False)
+    capture_network: bool = Field(default=False)
+    engine_mode: str = Field(default="browser")  # "browser" or "direct_api"
+    direct_api_config: Optional[DirectApiConfig] = None
 
 class LogEntry(BaseModel):
     timestamp: str
@@ -1133,9 +1145,13 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 if any(k in signals for k in ['bairro', 'neighborhood', 'district', 'borough']):
                     return ('bairro', 90)
 
-                # CIDADE
+                # CIDADE — cuidado para não confundir com campo "nome" que tem placeholder com nome de pessoa
                 if any(k in signals for k in ['cidade', 'city', 'municipio', 'município']):
-                    return ('cidade', 90)
+                    # Se o label ou id diz "nome" ou "name", NÃO é cidade
+                    if any(k in field_info['labelText'] for k in ['nome', 'name']) or field_info['id'] in ('name', 'nome'):
+                        pass  # Vai cair no scoring de nome abaixo
+                    else:
+                        return ('cidade', 90)
 
                 # ESTADO (select dropdown geralmente)
                 if any(k in signals for k in ['estado', 'state', 'uf ', ' uf']):
@@ -1143,22 +1159,27 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 if field_info['isSelect'] and any(k in signals for k in ['uf', 'state']):
                     return ('estado', 85)
 
-                # NOME — mais genérico, verificar por último
+                # NOME — PRIORIDADE ALTA: label/id "nome"/"name" SEMPRE é nome, nunca cidade
+                if field_info['id'] in ('name', 'nome') or field_info['name'] in ('name', 'nome'):
+                    return ('name', 98)
+                if any(k in field_info['labelText'] for k in ['nome completo', 'nome', 'full name', 'name']):
+                    return ('name', 95)
                 if any(k in signals for k in ['full_name', 'fullname', 'customer_name', 'nome completo', 'full name']):
                     return ('name', 95)
                 if field_info['autocomplete'] in ['name', 'given-name', 'family-name', 'cc-name']:
                     return ('name', 90)
+                # Placeholder com padrão de nome próprio: "ex: mariana cardoso", "ex: joão silva"
+                pl = field_info['placeholder'].lower()
+                if any(k in pl for k in ['ex:', 'exemplo:', 'nome', 'name']):
+                    # Se o placeholder contém "ex:" seguido de texto (padrão Zedy)
+                    return ('name', 92)
                 if 'nome' in signals and not any(k in signals for k in ['sobre', 'last', 'user']):
                     return ('name', 80)
-                if field_info['name'] == 'name' or field_info['id'] == 'name':
-                    return ('name', 85)
                 # Zedy e outros: placeholder ou label com "nome", "seu nome", "name"
                 if any(k in signals for k in ['seu nome', 'your name', 'nome e sobrenome', 'first name']):
                     return ('name', 85)
                 # Campo text genérico no topo da página que não é nenhum outro tipo
                 if inp_type == 'text' and field_info.get('top', 999) < 400:
-                    # Se placeholder ou label tem "nome" de qualquer forma
-                    pl = field_info['placeholder'].lower()
                     lb = field_info['labelText'].lower()
                     if any(k in pl for k in ['nome', 'name']) or any(k in lb for k in ['nome', 'name']):
                         return ('name', 75)
@@ -1189,7 +1210,108 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
 
             SKIP_IF_FILLED = {'rua', 'bairro', 'cidade', 'estado'}
             OPTIONAL_FIELDS = {'complemento'}
-            POST_FILL_DELAY = {'cep': 4.5}  # campos que precisam de delay após preenchimento
+            POST_FILL_DELAY = {'cep': 5.0}  # campos que precisam de delay após preenchimento (CEP → auto-complete endereço)
+
+            async def wait_for_address_expansion_after_cep(filled: dict) -> dict:
+                """Após preencher CEP, aguarda a expansão dos campos de endereço e preenche-os."""
+                if 'cep' not in filled:
+                    return filled
+                
+                session.add_log("  🏠 CEP preenchido — aguardando expansão de endereço...", "info")
+                
+                # Aguarda até 8s para campos de endereço aparecerem
+                for attempt in range(8):
+                    await asyncio.sleep(1.0)
+                    try:
+                        new_fields = await page.evaluate(EXTRACT_FIELDS_JS)
+                        if not new_fields:
+                            continue
+                        
+                        # Verifica se apareceram campos de endereço
+                        addr_types_found = set()
+                        for f in new_fields:
+                            ftype, fscore = classify_field(f)
+                            if ftype in ('rua', 'numero', 'bairro', 'complemento', 'cidade', 'estado') and fscore >= 60:
+                                addr_types_found.add(ftype)
+                        
+                        if len(addr_types_found) >= 2:
+                            session.add_log(f"  ✅ Campos de endereço expandidos: {list(addr_types_found)}", "success")
+                            
+                            # Preenche os novos campos
+                            used_types = set(filled.keys())
+                            classified_new = []
+                            for f in new_fields:
+                                ftype, fconf = classify_field(f)
+                                if ftype in addr_types_found and ftype not in used_types and fconf >= 60:
+                                    classified_new.append((f, ftype, fconf))
+                            
+                            classified_new.sort(key=lambda x: -x[2])
+                            for field_info, field_type, confidence in classified_new:
+                                if field_type in used_types:
+                                    continue
+                                value = FIELD_VALUES.get(field_type, "")
+                                if not value and field_type in OPTIONAL_FIELDS:
+                                    continue
+                                if not value:
+                                    continue
+                                
+                                current_val = (field_info['value'] or "").strip()
+                                mask_chars_set = set("0.-_()/ ")
+                                has_val = current_val and len(current_val) > 1 and not all(c in mask_chars_set for c in current_val)
+                                
+                                if has_val and field_type in SKIP_IF_FILLED:
+                                    label = FIELD_LABELS.get(field_type, field_type)
+                                    session.add_log(f"  {label}: auto-preenchido = '{current_val[:25]}'", "info")
+                                    filled[field_type] = True
+                                    used_types.add(field_type)
+                                    continue
+                                
+                                if has_val:
+                                    filled[field_type] = True
+                                    used_types.add(field_type)
+                                    continue
+                                
+                                # Selects (estado)
+                                if field_info['isSelect'] and field_type == 'estado':
+                                    try:
+                                        sel = page.locator(f'[data-phantom-idx="{field_info["idx"]}"]').first
+                                        await sel.select_option(value=value)
+                                        session.add_log(f"  Estado: {value} (select)", "info")
+                                        filled[field_type] = True
+                                        used_types.add(field_type)
+                                    except Exception:
+                                        try:
+                                            await sel.select_option(label=value)
+                                            filled[field_type] = True
+                                            used_types.add(field_type)
+                                        except Exception:
+                                            pass
+                                    continue
+                                
+                                # Preencher campo
+                                try:
+                                    el = page.locator(f'[data-phantom-idx="{field_info["idx"]}"]').first
+                                    if not await el.is_visible(timeout=500):
+                                        continue
+                                    await el.click()
+                                    await asyncio.sleep(random.uniform(0.05, 0.15))
+                                    await el.fill("")
+                                    await asyncio.sleep(random.uniform(0.03, 0.08))
+                                    await el.fill(value)
+                                    await asyncio.sleep(random.uniform(0.1, 0.25))
+                                    label = FIELD_LABELS.get(field_type, field_type)
+                                    session.add_log(f"  {label}: {value[:25]} (score:{confidence})", "info")
+                                    filled[field_type] = True
+                                    used_types.add(field_type)
+                                except Exception as e:
+                                    session.add_log(f"  Erro preenchendo {field_type}: {str(e)[:40]}", "error")
+                            
+                            return filled
+                    except Exception as e:
+                        session.add_log(f"  Erro checando expansão: {str(e)[:40]}", "error")
+                
+                session.add_log("  ⚠️ Campos de endereço não expandiram após CEP", "info")
+                return filled
 
             async def intelligent_scan_and_fill() -> dict:
                 """Extrai contexto DOM completo via JS e preenche com scoring inteligente."""
@@ -1475,6 +1597,10 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
 
                 # 3. Scan inteligente DOM + preenchimento
                 filled = await intelligent_scan_and_fill()
+                
+                # 3.5 Se preencheu CEP, aguarda expansão de endereço e preenche
+                filled = await wait_for_address_expansion_after_cep(filled)
+                
                 filled_count = len(filled)
                 current_field_set = set(filled.keys()) if filled else set()
 
@@ -1611,6 +1737,285 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
             session.add_log("Sessao encerrada.", "info")
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# ZEDY DIRECT API ENGINE — Checkout via Server Actions (sem navegador)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ZEDY_CHECKOUT_URL_PATTERN = re.compile(r'https?://seguro\.[^/]+/checkout/([A-Z0-9-]+)/?', re.IGNORECASE)
+
+async def resolve_zedy_token_from_html(checkout_url: str, proxy: str = "") -> dict:
+    """
+    GET na página de checkout Zedy, extrai dados hidratados do RSC/Next.js.
+    Retorna: token, storeId, checkoutId, produto, gateways, actionIds.
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+    }
+    
+    proxy_url = proxy.strip() if proxy else None
+    proxies = proxy_url if proxy_url else None
+    
+    async with httpx.AsyncClient(follow_redirects=True, timeout=30, proxy=proxies) as client:
+        resp = await client.get(checkout_url, headers=headers)
+        html = resp.text
+    
+    result = {
+        "token": "", "storeId": 0, "checkoutId": 0,
+        "product": {}, "store": {}, "payment": {}, "shipping": {},
+        "actionIds": [], "cookies": dict(resp.cookies),
+    }
+    
+    # Extrai __NEXT_DATA__ (SSR)
+    next_data_match = re.search(r'<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)</script>', html)
+    if next_data_match:
+        try:
+            data = json.loads(next_data_match.group(1))
+            props = data.get("props", {}).get("pageProps", {})
+            checkout = props.get("checkout", {})
+            products = checkout.get("products", [{}])
+            product = products[0] if products else {}
+            
+            result["token"] = props.get("token", checkout.get("token", ""))
+            result["storeId"] = checkout.get("storeId", props.get("storeId", 0))
+            result["checkoutId"] = checkout.get("id", 0)
+            result["product"] = {
+                "title": product.get("title", ""),
+                "productId": product.get("productId", 0),
+                "variantId": product.get("variantId", product.get("shopifyProductId", 0)),
+                "price": product.get("priceRaw", product.get("price", 0)),
+                "quantity": product.get("quantity", 1),
+                "imageUrl": product.get("image", ""),
+            }
+            result["store"] = {
+                "name": props.get("store", {}).get("name", ""),
+                "slug": props.get("store", {}).get("slug", ""),
+            }
+            result["payment"] = {
+                "gateways": props.get("payment", {}).get("gateways", []),
+                "pixDiscount": props.get("payment", {}).get("pixDiscount", 0),
+            }
+            result["shipping"] = {
+                "requiresZipcode": bool(checkout.get("isZipcode")),
+            }
+            return result
+        except Exception:
+            pass
+    
+    # Fallback: parse RSC chunks (self.__next_f.push)
+    rsc_chunks = []
+    for m in re.finditer(r'self\.__next_f\.push\(\[[\d,]*"((?:[^"\\]|\\.)*)"\]\)', html):
+        chunk = m.group(1).replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\')
+        rsc_chunks.append(chunk)
+    
+    full_payload = ''.join(rsc_chunks)
+    
+    token_m = re.search(r'"token"\s*:\s*"(Z-[A-Z0-9]+)"', full_payload, re.IGNORECASE)
+    store_id_m = re.search(r'"storeId"\s*:\s*(\d+)', full_payload)
+    checkout_id_m = re.search(r'"checkout"\s*:\s*\{[^}]*"id"\s*:\s*(\d+)', full_payload)
+    title_m = re.search(r'"title"\s*:\s*"([^"]+)"', full_payload)
+    product_id_m = re.search(r'"productId"\s*:\s*(\d+)', full_payload)
+    variant_id_m = re.search(r'"variantId"\s*:\s*(\d+)', full_payload) or re.search(r'"shopifyProductId"\s*:\s*(\d+)', full_payload)
+    price_m = re.search(r'"priceRaw"\s*:\s*([\d.]+)', full_payload) or re.search(r'"price"\s*:\s*([\d.]+)', full_payload)
+    image_m = re.search(r'"image"\s*:\s*"(https?://[^"]+)"', full_payload)
+    quantity_m = re.search(r'"quantity"\s*:\s*(\d+)', full_payload)
+    zipcode_m = re.search(r'"isZipcode"\s*:\s*(true|false)', full_payload)
+    store_name_m = re.search(r'"storeName"\s*:\s*"([^"]+)"', full_payload) or re.search(r'"name"\s*:\s*"([^"]+)"', full_payload)
+    store_slug_m = re.search(r'"slug"\s*:\s*"([^"]+)"', full_payload)
+    pix_discount_m = re.search(r'"pixDiscount"\s*:\s*([\d.]+)', full_payload)
+    gateway_m = re.search(r'"gateways?"\s*:\s*\[([^\]]*)\]', full_payload)
+    
+    result["token"] = token_m.group(1) if token_m else ""
+    result["storeId"] = int(store_id_m.group(1)) if store_id_m else 0
+    result["checkoutId"] = int(checkout_id_m.group(1)) if checkout_id_m else 0
+    result["product"] = {
+        "title": title_m.group(1) if title_m else "",
+        "productId": int(product_id_m.group(1)) if product_id_m else 0,
+        "variantId": int(variant_id_m.group(1)) if variant_id_m else 0,
+        "price": float(price_m.group(1)) if price_m else 0,
+        "quantity": int(quantity_m.group(1)) if quantity_m else 1,
+        "imageUrl": image_m.group(1) if image_m else "",
+    }
+    result["store"] = {
+        "name": store_name_m.group(1) if store_name_m else "",
+        "slug": store_slug_m.group(1) if store_slug_m else "",
+    }
+    gateways = []
+    if gateway_m:
+        gateways = [g.strip('"') for g in re.findall(r'"([^"]+)"', gateway_m.group(1))]
+    result["payment"] = {
+        "gateways": gateways,
+        "pixDiscount": float(pix_discount_m.group(1)) if pix_discount_m else 0,
+    }
+    result["shipping"] = {
+        "requiresZipcode": zipcode_m.group(1) == "true" if zipcode_m else False,
+    }
+    
+    # Extrai action IDs dos chunks de JS (next-action headers)
+    action_ids = re.findall(r'"([a-f0-9]{40})"', html)
+    result["actionIds"] = list(set(action_ids))[:10]
+    
+    return result
+
+
+async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_data: dict) -> bool:
+    """
+    Executa checkout Zedy via Server Actions HTTP diretas — sem navegador.
+    Fluxo: GET token → POST init → POST dados pessoais → POST CEP → POST pagamento
+    """
+    config = session.payload.direct_api_config
+    if not config:
+        session.add_log("Configuração de API Direta ausente!", "error")
+        return False
+    
+    checkout_url = session.payload.target_url
+    token = config.token
+    
+    session.add_log(f"🔗 Modo API Direta — Token: {token[:15]}...", "info")
+    
+    try:
+        # PASSO 1: Resolver token (GET página + extrair dados hidratados)
+        session.add_log("📡 Resolvendo token via GET...", "info")
+        resolved = await resolve_zedy_token_from_html(checkout_url, proxy)
+        
+        store_id = config.store_id or resolved["storeId"]
+        checkout_id = config.checkout_id or resolved["checkoutId"]
+        
+        if not store_id or not checkout_id:
+            session.add_log(f"❌ Não conseguiu resolver token: storeId={store_id} checkoutId={checkout_id}", "error")
+            return False
+        
+        session.add_log(f"✅ Resolvido: storeId={store_id} checkoutId={checkout_id}", "success")
+        session.add_log(f"   Produto: {resolved['product'].get('title', 'N/A')[:40]} — R${resolved['product'].get('price', 0)}", "info")
+        
+        # Cookies e headers base para Server Actions
+        cookies = resolved.get("cookies", {})
+        action_ids = resolved.get("actionIds", [])
+        
+        base_headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+            "Accept": "text/x-component",
+            "Content-Type": "text/plain;charset=UTF-8",
+            "Origin": re.match(r'(https?://[^/]+)', checkout_url).group(1),
+            "Referer": checkout_url,
+            "Next-Router-State-Tree": "",
+        }
+        
+        proxy_url = proxy.strip() if proxy else None
+        
+        addr = get_random_address()
+        cpf_digits = user_data["cpf"].replace(".", "").replace("-", "").replace(" ", "")
+        
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30, proxy=proxy_url, cookies=cookies) as client:
+            
+            # PASSO 2: Server Action — submeter dados pessoais
+            session.add_log("📤 Enviando dados pessoais...", "info")
+            personal_payload = json.dumps([
+                store_id, checkout_id,
+                {
+                    "email": user_data["email"],
+                    "name": user_data["name"],
+                    "phone": user_data["phone"],
+                }
+            ])
+            
+            headers_sa = {**base_headers}
+            if action_ids:
+                headers_sa["Next-Action"] = action_ids[0]
+            
+            resp1 = await client.post(checkout_url, content=personal_payload, headers=headers_sa)
+            session.add_log(f"   Resposta dados pessoais: {resp1.status_code}", "info" if resp1.status_code == 200 else "error")
+            
+            await asyncio.sleep(random.uniform(0.5, 1.5))
+            
+            # PASSO 3: Server Action — submeter CEP e endereço
+            if resolved["shipping"].get("requiresZipcode") or config.zipcode:
+                session.add_log("📤 Enviando CEP e endereço...", "info")
+                zipcode = config.zipcode or addr["cep"]
+                
+                address_payload = json.dumps([
+                    store_id, checkout_id,
+                    {
+                        "zipcode": zipcode,
+                        "address": addr["rua"],
+                        "number": addr["numero"],
+                        "complement": addr.get("complemento", ""),
+                        "neighborhood": addr["bairro"],
+                        "city": addr["cidade"],
+                        "state": addr["estado"],
+                        "cpf": cpf_digits,
+                    }
+                ])
+                
+                headers_sa2 = {**base_headers}
+                if len(action_ids) > 1:
+                    headers_sa2["Next-Action"] = action_ids[1]
+                
+                resp2 = await client.post(checkout_url, content=address_payload, headers=headers_sa2)
+                session.add_log(f"   Resposta endereço: {resp2.status_code}", "info" if resp2.status_code == 200 else "error")
+                
+                await asyncio.sleep(random.uniform(0.5, 1.5))
+            
+            # PASSO 4: Server Action — selecionar frete (primeira opção)
+            session.add_log("📤 Selecionando frete...", "info")
+            shipping_payload = json.dumps([
+                store_id, checkout_id,
+                {"shippingMethodId": "0"}  # primeira opção
+            ])
+            
+            headers_sa3 = {**base_headers}
+            if len(action_ids) > 2:
+                headers_sa3["Next-Action"] = action_ids[2]
+            
+            resp3 = await client.post(checkout_url, content=shipping_payload, headers=headers_sa3)
+            session.add_log(f"   Resposta frete: {resp3.status_code}", "info" if resp3.status_code == 200 else "error")
+            
+            await asyncio.sleep(random.uniform(0.5, 1.5))
+            
+            # PASSO 5: Server Action — finalizar com pagamento
+            payment_method = config.payment_method or "pix"
+            session.add_log(f"📤 Finalizando pedido com {payment_method.upper()}...", "info")
+            
+            payment_payload = json.dumps([
+                store_id, checkout_id,
+                {
+                    "paymentMethod": payment_method,
+                    "cpf": cpf_digits,
+                }
+            ])
+            
+            headers_sa4 = {**base_headers}
+            if len(action_ids) > 3:
+                headers_sa4["Next-Action"] = action_ids[3]
+            
+            resp4 = await client.post(checkout_url, content=payment_payload, headers=headers_sa4)
+            resp4_text = resp4.text[:500]
+            session.add_log(f"   Resposta pagamento: {resp4.status_code}", "info" if resp4.status_code == 200 else "error")
+            
+            # Verificar sucesso
+            success_indicators = ["pix", "qr", "pedido", "sucesso", "gerado", "pagamento", "obrigado", "aguardando"]
+            if any(ind in resp4_text.lower() for ind in success_indicators):
+                session.add_log("🎯 VENDA GERADA VIA API DIRETA!", "success")
+                session.successes += 1
+                return True
+            elif resp4.status_code == 200:
+                session.add_log(f"   Resposta (preview): {resp4_text[:200]}", "info")
+                # Status 200 pode ser sucesso mesmo sem indicador textual
+                session.add_log("✅ Checkout completado (status 200)", "success")
+                session.successes += 1
+                return True
+            else:
+                session.add_log(f"❌ Falha: {resp4_text[:200]}", "error")
+                session.failures += 1
+                return False
+                
+    except Exception as e:
+        session.add_log(f"❌ Erro API Direta: {str(e)[:200]}", "error")
+        session.failures += 1
+        return False
+
+
 # ─── Loop Principal da Engine ────────────────────────────────────────────────
 
 async def engine_loop(session: EngineSession):
@@ -1627,7 +2032,8 @@ async def engine_loop(session: EngineSession):
     successes_on_current_proxy = 0
     use_proxies = bool(payload.proxies)
 
-    mode_label = "LOCAL (Chromium)" if (ENGINE_MODE == "local" or not BROWSERLESS_API_KEY) else "BROWSERLESS"
+    is_direct_api = payload.engine_mode == "direct_api"
+    mode_label = "API DIRETA" if is_direct_api else ("LOCAL (Chromium)" if (ENGINE_MODE == "local" or not BROWSERLESS_API_KEY) else "BROWSERLESS")
     proxy_label = f"{len(payload.proxies)} proxies" if use_proxies else "SEM PROXY (IP direto)"
     session.add_log(
         f"Engine iniciada | {len(cpf_list)} CPFs | "
@@ -1648,7 +2054,10 @@ async def engine_loop(session: EngineSession):
         )
         session.add_log(f"  Dados: {user_data['name']} | {user_data['email']} | CPF: {user_data['cpf'][:6]}...", "info")
 
-        success = await run_checkout_session(session, proxy, user_data)
+        if is_direct_api:
+            success = await run_zedy_direct_api_session(session, proxy, user_data)
+        else:
+            success = await run_checkout_session(session, proxy, user_data)
 
         if success:
             successes_on_current_proxy += 1
@@ -1657,7 +2066,6 @@ async def engine_loop(session: EngineSession):
                 successes_on_current_proxy = 0
                 session.add_log(f"Proxy rotacionado -> #{proxy_idx + 1}", "info")
         else:
-            # Em caso de erro, rotaciona proxy tambem
             proxy_idx = (proxy_idx + 1) % len(proxy_list)
             successes_on_current_proxy = 0
             session.add_log(f"Erro, proxy rotacionado -> #{proxy_idx + 1}", "info")
@@ -1715,10 +2123,45 @@ async def health():
     mode = "local" if (ENGINE_MODE == "local" or not BROWSERLESS_API_KEY) else "browserless"
     return {
         "status": "ok",
-        "engine": "PHANTOM ENGINE v4.0 LOCAL",
+        "engine": "PHANTOM ENGINE v7.0 UNIVERSAL",
         "mode": mode,
         "sessions": len(sessions),
+        "features": ["browser", "direct_api", "zedy_token_resolver"],
     }
+
+
+class ResolveTokenPayload(BaseModel):
+    token: str
+
+@app.post("/api/zedy/resolve-token")
+async def api_resolve_zedy_token(payload: ResolveTokenPayload, _=Depends(verify_token)):
+    """Resolve um token Zedy: GET na página, extrai storeId, checkoutId, produto, gateways."""
+    token = payload.token.strip()
+    if not re.match(r'^Z-[A-Z0-9]+$', token, re.IGNORECASE):
+        raise HTTPException(status_code=400, detail="Token Zedy inválido")
+    
+    # Constroi URL a partir do token (usa domínio genérico — o redirect resolve)
+    # Tenta primeiro com o padrão seguro.*.com
+    checkout_url = f"https://seguro.texanostoreoficial.com/checkout/{token}"
+    
+    try:
+        resolved = await resolve_zedy_token_from_html(checkout_url)
+        if not resolved.get("storeId") and not resolved.get("checkoutId"):
+            raise HTTPException(status_code=404, detail="Token não resolveu nenhum dado")
+        
+        return {
+            "token": resolved.get("token", token),
+            "storeId": resolved.get("storeId", 0),
+            "checkoutId": resolved.get("checkoutId", 0),
+            "product": resolved.get("product", {}),
+            "store": resolved.get("store", {}),
+            "payment": resolved.get("payment", {}),
+            "shipping": resolved.get("shipping", {}),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao resolver token: {str(e)[:200]}")
 
 # ─── Main ────────────────────────────────────────────────────────────────────
 

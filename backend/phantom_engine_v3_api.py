@@ -980,11 +980,44 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     cep_selectors = [
                         'input[name="cep"]', 'input[name="zipcode"]', 'input#cep',
                         'input[name="zip_code"]', 'input[placeholder*="CEP"]',
-                        'input[placeholder*="00000-000"]', 'input[placeholder*="00000000"]',
+                        'input[placeholder*="00000-000"]', 'input[placeholder*="00000"]',
+                        'input[placeholder*="00000000"]',
                     ]
                     filled = await smart_fill_field(page, cep_selectors, addr["cep"], "CEP", session)
                     if not filled:
-                        await smart_fill_field_by_label(page, ["CEP"], addr["cep"], "CEP", session)
+                        filled = await smart_fill_field_by_label(page, ["CEP"], addr["cep"], "CEP", session)
+                    if not filled:
+                        # Fallback JS: preenche o primeiro input com placeholder "00000"
+                        try:
+                            await page.evaluate(f"""(cep) => {{
+                                const inputs = document.querySelectorAll('input');
+                                for (const inp of inputs) {{
+                                    const ph = inp.placeholder || '';
+                                    if (ph.includes('00000')) {{
+                                        inp.focus();
+                                        inp.value = '';
+                                        inp.dispatchEvent(new Event('input', {{bubbles: true}}));
+                                        inp.dispatchEvent(new Event('change', {{bubbles: true}}));
+                                        return true;
+                                    }}
+                                }}
+                                return false;
+                            }}""", addr["cep"])
+                            # Preenche via teclado para garantir eventos React
+                            cep_input = page.locator('input:visible').filter(has_text="").first
+                            for inp in await page.locator('input:visible').all():
+                                try:
+                                    ph = await inp.get_attribute("placeholder") or ""
+                                    if "00000" in ph:
+                                        await inp.click()
+                                        await inp.fill(addr["cep"])
+                                        session.add_log(f"  CEP preenchido via fallback JS!", "success")
+                                        filled = True
+                                        break
+                                except Exception:
+                                    continue
+                        except Exception as e:
+                            session.add_log(f"  Fallback CEP falhou: {e}", "error")
                     
                     session.add_log("  Aguardando auto-preenchimento do CEP...", "info")
                     await asyncio.sleep(3.5)

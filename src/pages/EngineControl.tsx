@@ -103,6 +103,7 @@ export default function EngineControl() {
       headless,
       rotate_after_successes: rotateAfter,
       is_product_url: isProductUrl,
+      capture_network: captureNetwork,
       ...(cpfs.length > 0 ? { cpfs } : {}),
     };
 

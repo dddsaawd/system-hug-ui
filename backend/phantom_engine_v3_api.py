@@ -93,6 +93,14 @@ async def health_check():
 
 
 
+class DirectApiConfig(BaseModel):
+    platform: str = "zedy"
+    token: str = ""
+    store_id: Optional[int] = None
+    checkout_id: Optional[int] = None
+    payment_method: str = "pix"
+    zipcode: Optional[str] = None
+
 class StartPayload(BaseModel):
     target_url: str
     proxies: list[str] = Field(default=[])
@@ -100,8 +108,10 @@ class StartPayload(BaseModel):
     cpfs: Optional[list[str]] = None
     headless: bool = True
     rotate_after_successes: int = Field(default=1, ge=1, le=100)
-    is_product_url: bool = Field(default=False)  # True = navega pelo produto/carrinho antes
-    capture_network: bool = Field(default=False)  # True = captura requests/responses do checkout
+    is_product_url: bool = Field(default=False)
+    capture_network: bool = Field(default=False)
+    engine_mode: str = Field(default="browser")  # "browser" or "direct_api"
+    direct_api_config: Optional[DirectApiConfig] = None
 
 class LogEntry(BaseModel):
     timestamp: str

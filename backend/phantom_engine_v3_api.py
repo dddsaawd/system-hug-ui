@@ -99,6 +99,7 @@ class StartPayload(BaseModel):
     headless: bool = True
     rotate_after_successes: int = Field(default=1, ge=1, le=100)
     is_product_url: bool = Field(default=False)  # True = navega pelo produto/carrinho antes
+    capture_network: bool = Field(default=False)  # True = captura requests/responses do checkout
 
 class LogEntry(BaseModel):
     timestamp: str

@@ -464,36 +464,48 @@ async def select_pix_payment(page, session: EngineSession) -> bool:
 
 async def select_shipping_option(page, session: EngineSession) -> bool:
     """Tenta selecionar uma opcao de frete (primeira disponivel)."""
-    frete_selectors = [
-        # Radio buttons de frete
-        'label:has-text("Frete")', 'label:has-text("frete")',
-        'label:has-text("Envio")', 'label:has-text("envio")',
-        'label:has-text("Entrega")',
-        'label:has-text("JADLOG")', 'label:has-text("Correios")',
-        'label:has-text("PAC")', 'label:has-text("SEDEX")',
-        'label:has-text("Grátis")', 'label:has-text("Gratis")',
-        # Divs clicaveis
-        'div:has-text("Frete Grátis")', 'div:has-text("Frete grátis")',
-        'div:has-text("Frete Gratis")',
-        # Inputs de radio
+    # Primeiro tenta radios de shipping (mais confiável)
+    radio_selectors = [
         'input[name="shipping"]', 'input[name="frete"]',
         'input[name="shipping_method"]', 'input[name="delivery"]',
-        # Generico - qualquer radio dentro de secao de frete
         '[class*="shipping"] input[type="radio"]',
         '[class*="frete"] input[type="radio"]',
         '[class*="delivery"] input[type="radio"]',
     ]
-    for sel in frete_selectors:
+    for sel in radio_selectors:
         try:
             el = page.locator(sel).first
-            if await el.is_visible(timeout=1500):
+            if await el.is_visible(timeout=1000):
                 await el.click()
-                frete_text = (await el.text_content() or "frete")[:50]
-                session.add_log(f"  Frete selecionado: {frete_text}", "success")
+                session.add_log(f"  Frete radio clicado: {sel}", "success")
                 await asyncio.sleep(random.uniform(0.3, 0.6))
                 return True
         except Exception:
             continue
+
+    # Labels com texto específico de frete (evita sidebar)
+    frete_labels = [
+        'label:has-text("JADLOG")', 'label:has-text("Correios")',
+        'label:has-text("PAC")', 'label:has-text("SEDEX")',
+        'label:has-text("Frete Grátis")', 'label:has-text("Frete grátis")',
+        'label:has-text("Frete Gratis")',
+        'label:has-text("Envio")',
+    ]
+    for sel in frete_labels:
+        try:
+            el = page.locator(sel).first
+            if await el.is_visible(timeout=1000):
+                text = (await el.text_content() or "")[:50]
+                # Evita clicar em elementos da sidebar (texto longo com "PAGAMENTO" etc)
+                if "pagamento" in text.lower() or "seguro" in text.lower():
+                    continue
+                await el.click()
+                session.add_log(f"  Frete selecionado: {text}", "success")
+                await asyncio.sleep(random.uniform(0.3, 0.6))
+                return True
+        except Exception:
+            continue
+    
     return False
 
 
@@ -732,13 +744,19 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                         return False
 
                 async def is_field_empty(selectors, timeout=400):
-                    """Retorna True se algum campo esta visivel E vazio."""
+                    """Retorna True se algum campo esta visivel E vazio (ou so tem mascara)."""
+                    mask_chars = set("0.-_()/ ")  # caracteres de mascara
                     for sel in selectors:
                         try:
                             el = page.locator(sel).first
                             if await el.is_visible(timeout=timeout):
                                 val = await el.input_value()
-                                if not val or len(val.strip()) < 2:
+                                # Vazio ou só tem caracteres de máscara (ex: "00000-000", "000.000.000-00")
+                                stripped = val.strip() if val else ""
+                                if not stripped or len(stripped) < 2:
+                                    return True
+                                # Se o valor é só máscara (zeros, pontos, traços)
+                                if all(c in mask_chars for c in stripped):
                                     return True
                         except Exception:
                             pass
@@ -869,7 +887,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 return "desconhecido"
 
             # ─── Execucao sequencial das etapas ───
-            max_loops = 8
+            max_loops = 12
             etapas_completadas = set()
 
             for loop_num in range(1, max_loops + 1):
@@ -1184,15 +1202,19 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 # ──── CONTINUAR GENERICO (botao visivel mas etapa nao identificada) ────
                 elif step == "continuar_generico":
                     session.add_log("  Etapa nao identificada mas botao CONTINUAR visivel.", "info")
-                    # Tenta preencher campos vazios visiveis antes de clicar
+                    # Tenta preencher TODOS campos vazios visiveis antes de clicar
+                    filled_something = False
                     try:
                         inputs = page.locator("input:visible")
                         count = await inputs.count()
+                        mask_chars = set("0.-_()/ ")
                         for i in range(min(count, 10)):
                             inp = inputs.nth(i)
                             try:
                                 val = await inp.input_value()
-                                if val and len(val.strip()) > 1:
+                                stripped = (val or "").strip()
+                                # Pula campos já preenchidos (exceto máscaras)
+                                if stripped and len(stripped) > 1 and not all(c in mask_chars for c in stripped):
                                     continue
                                 name = (await inp.get_attribute("name") or "").lower()
                                 ph = (await inp.get_attribute("placeholder") or "").lower()
@@ -1200,21 +1222,38 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                 if inp_type in ("hidden", "checkbox", "radio", "submit"):
                                     continue
                                 # Tenta adivinhar o que preencher
-                                if any(k in name + ph for k in ["numero", "number", "nº", "mero"]):
+                                if any(k in name + ph for k in ["cep", "zipcode", "zip_code", "00000-000", "00000000"]):
+                                    await inp.click()
+                                    await inp.fill(addr["cep"])
+                                    session.add_log(f"  Auto-fill CEP: {addr['cep']}", "info")
+                                    filled_something = True
+                                    # Aguarda auto-preenchimento do CEP
+                                    await asyncio.sleep(3.5)
+                                elif any(k in name + ph for k in ["numero", "number", "nº", "mero", "123"]):
+                                    await inp.click()
                                     await inp.fill(addr["numero"])
                                     session.add_log(f"  Auto-fill Numero: {addr['numero']}", "info")
+                                    filled_something = True
                                 elif any(k in name + ph for k in ["complement", "complemento"]):
                                     if addr["complemento"]:
+                                        await inp.click()
                                         await inp.fill(addr["complemento"])
+                                        filled_something = True
                                 elif any(k in name + ph for k in ["cpf", "document", "000.000"]):
+                                    await inp.click()
                                     await inp.fill(cpf_digits)
                                     session.add_log(f"  Auto-fill CPF", "info")
+                                    filled_something = True
                             except Exception:
                                 pass
                     except Exception:
                         pass
                     
-                    for text in ["CONTINUAR", "Continuar", "Continue", "Próximo"]:
+                    if filled_something:
+                        session.add_log("  Campos preenchidos via auto-fill generico.", "info")
+                    
+                    for text in ["ESCOLHER FRETE", "Escolher Frete", "IR PARA PAGAMENTO",
+                                 "Ir para Pagamento", "CONTINUAR", "Continuar", "Continue", "Próximo"]:
                         try:
                             btn = page.get_by_role("button", name=text, exact=False).first
                             if await btn.is_visible(timeout=500):
@@ -1226,6 +1265,8 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             continue
                     await asyncio.sleep(random.uniform(2.0, 3.5))
                     continue
+
+
 
                 # ──── DESCONHECIDO ────
                 else:

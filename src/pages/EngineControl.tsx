@@ -229,7 +229,7 @@ export default function EngineControl() {
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+      <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         {/* Config Form */}
         <Card className="border-border/50">
           <CardHeader>

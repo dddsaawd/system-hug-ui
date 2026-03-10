@@ -174,23 +174,41 @@ export default function EngineControl() {
       )}
 
       {/* Fluxo de Automação */}
-      <Card className="border-primary/20 bg-primary/5">
+      <Card className={`border-primary/20 ${engineMode === "direct_api" ? "bg-chart-warning/5 border-chart-warning/20" : "bg-primary/5"}`}>
         <CardContent className="p-4">
-          <p className="text-xs font-semibold text-primary mb-2">DOM-INTELLIGENCE v6.0 (TRANSIÇÃO DE ETAPA)</p>
+          <p className="text-xs font-semibold text-primary mb-2">
+            {engineMode === "direct_api" 
+              ? "⚡ MODO API DIRETO — Sem navegador, máxima velocidade" 
+              : "🌐 MODO NAVEGADOR — DOM-INTELLIGENCE v7.0"}
+          </p>
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            {isProductUrl && (
+            {engineMode === "direct_api" ? (
               <>
-                <span className="rounded bg-chart-warning/10 px-2 py-1 text-chart-warning font-medium">0. Produto → Carrinho</span>
+                <span className="rounded bg-chart-warning/10 px-2 py-1 text-chart-warning font-medium">1. Resolve Token</span>
                 <span>→</span>
+                <span className="rounded bg-chart-warning/10 px-2 py-1 text-chart-warning font-medium">2. Gera Dados</span>
+                <span>→</span>
+                <span className="rounded bg-chart-warning/10 px-2 py-1 text-chart-warning font-medium">3. POST Pedido</span>
+                <span>→</span>
+                <span className="rounded bg-chart-warning/10 px-2 py-1 text-chart-warning font-medium">4. Gera PIX ✅</span>
+              </>
+            ) : (
+              <>
+                {isProductUrl && (
+                  <>
+                    <span className="rounded bg-chart-warning/10 px-2 py-1 text-chart-warning font-medium">0. Produto → Carrinho</span>
+                    <span>→</span>
+                  </>
+                )}
+                <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">🔍 Scan Campos</span>
+                <span>→</span>
+                <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">✏️ Preenche Tudo</span>
+                <span>→</span>
+                <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">🖱️ Clica Botão</span>
+                <span>→</span>
+                <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">🔄 Repete até Sucesso</span>
               </>
             )}
-            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">🔍 Scan Campos</span>
-            <span>→</span>
-            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">✏️ Preenche Tudo</span>
-            <span>→</span>
-            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">🖱️ Clica Botão</span>
-            <span>→</span>
-            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">🔄 Repete até Sucesso</span>
           </div>
         </CardContent>
       </Card>

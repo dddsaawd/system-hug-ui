@@ -464,36 +464,48 @@ async def select_pix_payment(page, session: EngineSession) -> bool:
 
 async def select_shipping_option(page, session: EngineSession) -> bool:
     """Tenta selecionar uma opcao de frete (primeira disponivel)."""
-    frete_selectors = [
-        # Radio buttons de frete
-        'label:has-text("Frete")', 'label:has-text("frete")',
-        'label:has-text("Envio")', 'label:has-text("envio")',
-        'label:has-text("Entrega")',
-        'label:has-text("JADLOG")', 'label:has-text("Correios")',
-        'label:has-text("PAC")', 'label:has-text("SEDEX")',
-        'label:has-text("Grátis")', 'label:has-text("Gratis")',
-        # Divs clicaveis
-        'div:has-text("Frete Grátis")', 'div:has-text("Frete grátis")',
-        'div:has-text("Frete Gratis")',
-        # Inputs de radio
+    # Primeiro tenta radios de shipping (mais confiável)
+    radio_selectors = [
         'input[name="shipping"]', 'input[name="frete"]',
         'input[name="shipping_method"]', 'input[name="delivery"]',
-        # Generico - qualquer radio dentro de secao de frete
         '[class*="shipping"] input[type="radio"]',
         '[class*="frete"] input[type="radio"]',
         '[class*="delivery"] input[type="radio"]',
     ]
-    for sel in frete_selectors:
+    for sel in radio_selectors:
         try:
             el = page.locator(sel).first
-            if await el.is_visible(timeout=1500):
+            if await el.is_visible(timeout=1000):
                 await el.click()
-                frete_text = (await el.text_content() or "frete")[:50]
-                session.add_log(f"  Frete selecionado: {frete_text}", "success")
+                session.add_log(f"  Frete radio clicado: {sel}", "success")
                 await asyncio.sleep(random.uniform(0.3, 0.6))
                 return True
         except Exception:
             continue
+
+    # Labels com texto específico de frete (evita sidebar)
+    frete_labels = [
+        'label:has-text("JADLOG")', 'label:has-text("Correios")',
+        'label:has-text("PAC")', 'label:has-text("SEDEX")',
+        'label:has-text("Frete Grátis")', 'label:has-text("Frete grátis")',
+        'label:has-text("Frete Gratis")',
+        'label:has-text("Envio")',
+    ]
+    for sel in frete_labels:
+        try:
+            el = page.locator(sel).first
+            if await el.is_visible(timeout=1000):
+                text = (await el.text_content() or "")[:50]
+                # Evita clicar em elementos da sidebar (texto longo com "PAGAMENTO" etc)
+                if "pagamento" in text.lower() or "seguro" in text.lower():
+                    continue
+                await el.click()
+                session.add_log(f"  Frete selecionado: {text}", "success")
+                await asyncio.sleep(random.uniform(0.3, 0.6))
+                return True
+        except Exception:
+            continue
+    
     return False
 
 

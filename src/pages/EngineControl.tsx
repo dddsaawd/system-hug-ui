@@ -154,7 +154,7 @@ export default function EngineControl() {
           <Monitor className="h-6 w-6 text-primary" /> Navegador Fantasma
         </h1>
         <p className="text-sm text-muted-foreground">
-          PHANTOM ENGINE v6.0 — DOM-Intelligence · Detecção de Transição de Etapa
+          PHANTOM ENGINE v7.0 — DOM-Intelligence · API Direto · Detecção de Transição
         </p>
       </div>
 

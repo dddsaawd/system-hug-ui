@@ -380,39 +380,128 @@ export default function EngineControl() {
           </CardContent>
         </Card>
 
-        {/* Live Logs */}
         <Card className="border-border/50">
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Activity className="h-4 w-4" /> Logs Playwright
-              {polling && <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[460px] overflow-y-auto rounded-md bg-muted/50 p-3 font-mono text-xs space-y-1.5">
-              {!status?.logs?.length && (
-                <p className="text-muted-foreground text-center py-8">
-                  Nenhum log ainda. Inicie o navegador fantasma para ver os eventos.
-                </p>
-              )}
-              {status?.logs?.map((log, i) => (
-                <div
-                  key={i}
-                  className={`flex gap-2 ${
-                    log.type === "success"
-                      ? "text-primary"
-                      : log.type === "error"
-                      ? "text-destructive"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  <span className="text-muted-foreground shrink-0">
-                    {new Date(log.timestamp).toLocaleTimeString("pt-BR")}
-                  </span>
-                  <span>{log.message}</span>
+          <CardContent className="p-0">
+            <Tabs defaultValue="logs" className="w-full">
+              <div className="flex items-center justify-between px-4 pt-4 pb-2">
+                <TabsList className="h-8">
+                  <TabsTrigger value="logs" className="text-xs gap-1.5">
+                    <Activity className="h-3.5 w-3.5" /> Logs
+                    {polling && <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />}
+                  </TabsTrigger>
+                  <TabsTrigger value="network" className="text-xs gap-1.5">
+                    <Globe className="h-3.5 w-3.5" /> Rede
+                    {(status?.captured_requests?.length ?? 0) > 0 && (
+                      <span className="text-[10px] bg-primary/20 text-primary px-1.5 rounded-full">
+                        {status?.captured_requests?.length}
+                      </span>
+                    )}
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+
+              <TabsContent value="logs" className="px-4 pb-4 mt-0">
+                <div className="h-[440px] overflow-y-auto rounded-md bg-muted/50 p-3 font-mono text-xs space-y-1.5">
+                  {!status?.logs?.length && (
+                    <p className="text-muted-foreground text-center py-8">
+                      Nenhum log ainda. Inicie o navegador fantasma para ver os eventos.
+                    </p>
+                  )}
+                  {status?.logs?.map((log, i) => (
+                    <div
+                      key={i}
+                      className={`flex gap-2 ${
+                        log.type === "success"
+                          ? "text-primary"
+                          : log.type === "error"
+                          ? "text-destructive"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      <span className="text-muted-foreground shrink-0">
+                        {new Date(log.timestamp).toLocaleTimeString("pt-BR")}
+                      </span>
+                      <span>{log.message}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </TabsContent>
+
+              <TabsContent value="network" className="px-4 pb-4 mt-0">
+                <div className="h-[440px] overflow-y-auto rounded-md bg-muted/50 p-2 font-mono text-xs space-y-2">
+                  {!captureNetwork && (
+                    <p className="text-muted-foreground text-center py-8">
+                      Ative "Captura de Rede" nas configurações para interceptar as requests do checkout.
+                    </p>
+                  )}
+                  {captureNetwork && !status?.captured_requests?.length && (
+                    <p className="text-muted-foreground text-center py-8">
+                      Captura ativa. Requests aparecerão aqui durante a automação.
+                    </p>
+                  )}
+                  {status?.captured_requests?.map((req, i) => (
+                    <details key={i} className="border border-border/30 rounded-md overflow-hidden">
+                      <summary className="cursor-pointer px-3 py-2 hover:bg-muted/80 flex items-center gap-2">
+                        <span className={`font-bold ${
+                          req.method === "POST" ? "text-chart-warning" :
+                          req.method === "GET" ? "text-primary" :
+                          "text-destructive"
+                        }`}>
+                          {req.method}
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                          req.status >= 200 && req.status < 300 ? "bg-primary/20 text-primary" :
+                          req.status >= 400 ? "bg-destructive/20 text-destructive" :
+                          "bg-muted text-muted-foreground"
+                        }`}>
+                          {req.status}
+                        </span>
+                        <span className="text-muted-foreground truncate">{req.url.substring(0, 70)}</span>
+                        <span className="text-muted-foreground/50 ml-auto shrink-0">
+                          {new Date(req.timestamp).toLocaleTimeString("pt-BR")}
+                        </span>
+                      </summary>
+                      <div className="px-3 py-2 space-y-2 bg-background/50 border-t border-border/20">
+                        <div>
+                          <p className="text-muted-foreground font-semibold mb-1">URL completa:</p>
+                          <p className="text-primary break-all select-all">{req.url}</p>
+                        </div>
+                        {Object.keys(req.request_headers || {}).length > 0 && (
+                          <div>
+                            <p className="text-muted-foreground font-semibold mb-1">Headers:</p>
+                            <pre className="bg-muted/50 p-2 rounded text-[10px] overflow-x-auto select-all">
+                              {JSON.stringify(req.request_headers, null, 2)}
+                            </pre>
+                          </div>
+                        )}
+                        {req.request_body && (
+                          <div>
+                            <p className="text-chart-warning font-semibold mb-1">Request Body:</p>
+                            <pre className="bg-muted/50 p-2 rounded text-[10px] overflow-x-auto max-h-40 select-all">
+                              {(() => {
+                                try { return JSON.stringify(JSON.parse(req.request_body), null, 2); }
+                                catch { return req.request_body; }
+                              })()}
+                            </pre>
+                          </div>
+                        )}
+                        {req.response_body && (
+                          <div>
+                            <p className="text-primary font-semibold mb-1">Response Body:</p>
+                            <pre className="bg-muted/50 p-2 rounded text-[10px] overflow-x-auto max-h-40 select-all">
+                              {(() => {
+                                try { return JSON.stringify(JSON.parse(req.response_body), null, 2); }
+                                catch { return req.response_body; }
+                              })()}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    </details>
+                  ))}
+                </div>
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
       </div>

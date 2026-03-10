@@ -792,10 +792,28 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 if "cep" not in etapas_completadas:
                     cep_sels = [
                         'input[name="cep"]', 'input[name="zipcode"]', 'input[placeholder*="CEP"]',
-                        'input[placeholder*="00000-000"]',
+                        'input[placeholder*="00000-000"]', 'input[placeholder*="00000"]',
                     ]
                     if await is_field_empty(cep_sels):
                         return "cep"
+                    # Fallback JS: busca qualquer input visivel com placeholder contendo "00000"
+                    try:
+                        has_cep_js = await page.evaluate("""() => {
+                            const inputs = document.querySelectorAll('input');
+                            for (const inp of inputs) {
+                                const ph = inp.placeholder || '';
+                                const style = window.getComputedStyle(inp);
+                                if (ph.includes('00000') && style.display !== 'none' && style.visibility !== 'hidden') {
+                                    const val = inp.value.replace(/[^0-9]/g, '');
+                                    if (val.length < 5) return true;
+                                }
+                            }
+                            return false;
+                        }""")
+                        if has_cep_js:
+                            return "cep"
+                    except Exception:
+                        pass
 
                 # 3. ENDEREÇO — campo Número vazio OU botão ESCOLHER FRETE
                 if "endereco" not in etapas_completadas:

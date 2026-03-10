@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Play, Square, RefreshCw, Zap, CheckCircle2, XCircle,
-  Activity, Clock, AlertTriangle, Loader2, Eye, EyeOff, Monitor
+  Activity, Clock, AlertTriangle, Loader2, Eye, EyeOff, Monitor, Globe, Wifi
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

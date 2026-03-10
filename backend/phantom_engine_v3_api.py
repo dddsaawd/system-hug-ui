@@ -1321,11 +1321,33 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
 
                 # ──── DESCONHECIDO ────
                 else:
-                    session.add_log(f"  Etapa desconhecida. Tentando botao generico...", "info")
+                    session.add_log(f"  Etapa desconhecida. Tentando preencher campos visiveis...", "info")
+                    
+                    # Tenta preencher CEP se visivel (fallback para seletores nao reconhecidos)
+                    try:
+                        for inp in await page.locator('input:visible').all():
+                            ph = await inp.get_attribute("placeholder") or ""
+                            val = await inp.input_value() or ""
+                            val_digits = ''.join(c for c in val if c.isdigit())
+                            if "00000" in ph and len(val_digits) < 5:
+                                await inp.click()
+                                await inp.fill(addr["cep"])
+                                session.add_log(f"  CEP preenchido via fallback (ph={ph})!", "success")
+                                etapas_completadas.add("cep")
+                                await asyncio.sleep(3.5)
+                                break
+                    except Exception:
+                        pass
+                    
                     botao_clicado = await universal_click_button(page, session, loop_num)
                     if not botao_clicado:
-                        session.add_log("  Nenhum botao encontrado. Encerrando.", "error")
-                        break
+                        # Não encerra imediatamente — dá mais uma chance
+                        session.add_log("  Nenhum botao encontrado. Aguardando...", "info")
+                        await asyncio.sleep(2.0)
+                        # Se já tentou 3 vezes sem botão, aí sim encerra
+                        if loop_num >= 3 and len(etapas_completadas) <= 1:
+                            session.add_log("  Muitas tentativas sem progresso. Encerrando.", "error")
+                            break
                     await asyncio.sleep(random.uniform(2.0, 3.5))
                     continue
 

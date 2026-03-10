@@ -761,14 +761,14 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     return False
 
                 # 1. DADOS PESSOAIS — campo Nome visível e vazio
+                #    NUNCA preenche CEP aqui. CEP é sempre etapa separada.
                 if "dados_pessoais" not in etapas_completadas:
                     nome_sels = [
                         'input[name="name"]', 'input[name="nome"]', 'input[placeholder*="Nome"]',
                         'input[autocomplete="name"]',
                     ]
                     if await is_field_empty(nome_sels):
-                        cep_visible = await is_visible('input[name="cep"]') or await is_visible('input[placeholder*="CEP"]') or await is_visible('input[placeholder*="00000-000"]')
-                        return "dados_pessoais_com_cep" if cep_visible else "dados_pessoais"
+                        return "dados_pessoais"
 
                 # 2. CEP (tela separada)
                 if "cep" not in etapas_completadas:

@@ -55,7 +55,41 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── Models ──────────────────────────────────────────────────────────────────
+# ─── Health Check (testa Chromium) ────────────────────────────────────────────
+@app.get("/health")
+async def health_check():
+    """Testa se o Chromium consegue iniciar corretamente."""
+    import glob
+    browsers_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "/ms-playwright")
+    found_files = glob.glob(f"{browsers_path}/**/chrome*", recursive=True)
+    
+    chromium_ok = False
+    error_msg = None
+    try:
+        from playwright.async_api import async_playwright
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+                timeout=30000,
+            )
+            version = browser.version
+            await browser.close()
+            chromium_ok = True
+    except Exception as e:
+        error_msg = str(e)
+    
+    return {
+        "status": "ok" if chromium_ok else "error",
+        "chromium": chromium_ok,
+        "chromium_version": version if chromium_ok else None,
+        "error": error_msg,
+        "browsers_path": browsers_path,
+        "found_binaries": found_files[:10],
+        "engine_mode": ENGINE_MODE,
+    }
+
+
 
 class StartPayload(BaseModel):
     target_url: str

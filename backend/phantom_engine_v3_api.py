@@ -722,10 +722,117 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
             )
             page = await context.new_page()
 
-            # Navega para o checkout
+            # Navega para o checkout (ou produto -> carrinho -> checkout)
             session.add_log(f"Navegando: {session.payload.target_url}", "info")
             await page.goto(session.payload.target_url, wait_until="networkidle", timeout=60000)
             await asyncio.sleep(random.uniform(2.0, 3.5))
+
+            # ═══ PRE-CHECKOUT: Produto → Carrinho → Checkout ═══
+            if session.payload.is_product_url:
+                session.add_log("Modo PRODUTO ativo. Buscando botao de compra...", "info")
+                
+                buy_btn_selectors = [
+                    'button:has-text("Comprar")',
+                    'button:has-text("COMPRAR")',
+                    'button:has-text("Adicionar")',
+                    'button:has-text("ADICIONAR")',
+                    'button:has-text("Add to cart")',
+                    'button:has-text("Comprar agora")',
+                    'button:has-text("COMPRAR AGORA")',
+                    'a:has-text("Comprar")',
+                    'a:has-text("COMPRAR")',
+                    '[data-action="buy"]',
+                    '[data-action="add-to-cart"]',
+                    '.buy-button',
+                    '.btn-buy',
+                    '#buy-button',
+                    'input[type="submit"][value*="Comprar"]',
+                ]
+                
+                buy_clicked = False
+                for sel in buy_btn_selectors:
+                    try:
+                        el = page.locator(sel).first
+                        if await el.is_visible(timeout=1500):
+                            await el.click()
+                            buy_clicked = True
+                            session.add_log(f"Botao de compra clicado: {sel}", "success")
+                            break
+                    except Exception:
+                        continue
+                
+                if not buy_clicked:
+                    session.add_log("Nao encontrou botao de compra na pagina do produto!", "error")
+                    session.failures += 1
+                    return False
+                
+                await asyncio.sleep(random.uniform(2.0, 4.0))
+                
+                # Verifica se foi pro carrinho ou direto pro checkout
+                current_url = page.url.lower()
+                if "cart" in current_url or "carrinho" in current_url:
+                    session.add_log("Pagina do carrinho detectada. Buscando botao de checkout...", "info")
+                    
+                    checkout_btn_selectors = [
+                        'button:has-text("Finalizar")',
+                        'button:has-text("FINALIZAR")',
+                        'button:has-text("Checkout")',
+                        'button:has-text("CHECKOUT")',
+                        'button:has-text("Fechar pedido")',
+                        'button:has-text("FECHAR PEDIDO")',
+                        'button:has-text("Continuar")',
+                        'button:has-text("CONTINUAR")',
+                        'button:has-text("Ir para pagamento")',
+                        'a:has-text("Finalizar")',
+                        'a:has-text("Checkout")',
+                        'a:has-text("Fechar pedido")',
+                        'a[href*="checkout"]',
+                        '.checkout-button',
+                        '.btn-checkout',
+                        '#checkout-button',
+                    ]
+                    
+                    checkout_clicked = False
+                    for sel in checkout_btn_selectors:
+                        try:
+                            el = page.locator(sel).first
+                            if await el.is_visible(timeout=1500):
+                                await el.click()
+                                checkout_clicked = True
+                                session.add_log(f"Botao de checkout clicado: {sel}", "success")
+                                break
+                        except Exception:
+                            continue
+                    
+                    if not checkout_clicked:
+                        session.add_log("Nao encontrou botao de checkout no carrinho!", "error")
+                        session.failures += 1
+                        return False
+                    
+                    await asyncio.sleep(random.uniform(2.0, 4.0))
+                    await page.wait_for_load_state("networkidle", timeout=30000)
+                
+                elif "checkout" in current_url:
+                    session.add_log("Redirecionado direto para checkout!", "success")
+                else:
+                    # Pode ter aberto um modal ou ficado na mesma pagina
+                    session.add_log(f"URL apos clique: {page.url[:80]}. Aguardando redirecionamento...", "info")
+                    await asyncio.sleep(3.0)
+                    current_url = page.url.lower()
+                    if "checkout" not in current_url and "cart" not in current_url:
+                        # Tenta encontrar link de checkout na pagina
+                        try:
+                            checkout_link = page.locator('a[href*="checkout"]').first
+                            if await checkout_link.is_visible(timeout=2000):
+                                await checkout_link.click()
+                                session.add_log("Link de checkout encontrado e clicado!", "success")
+                                await asyncio.sleep(2.0)
+                                await page.wait_for_load_state("networkidle", timeout=30000)
+                        except Exception:
+                            pass
+                
+                session.add_log(f"Checkout URL: {page.url[:100]}", "info")
+                await asyncio.sleep(random.uniform(1.0, 2.0))
 
             addr = get_random_address()
             cpf_digits = user_data["cpf"].replace(".", "").replace("-", "").replace(" ", "")

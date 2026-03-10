@@ -1147,22 +1147,27 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 if field_info['isSelect'] and any(k in signals for k in ['uf', 'state']):
                     return ('estado', 85)
 
-                # NOME — mais genérico, verificar por último
+                # NOME — PRIORIDADE ALTA: label/id "nome"/"name" SEMPRE é nome, nunca cidade
+                if field_info['id'] in ('name', 'nome') or field_info['name'] in ('name', 'nome'):
+                    return ('name', 98)
+                if any(k in field_info['labelText'] for k in ['nome completo', 'nome', 'full name', 'name']):
+                    return ('name', 95)
                 if any(k in signals for k in ['full_name', 'fullname', 'customer_name', 'nome completo', 'full name']):
                     return ('name', 95)
                 if field_info['autocomplete'] in ['name', 'given-name', 'family-name', 'cc-name']:
                     return ('name', 90)
+                # Placeholder com padrão de nome próprio: "ex: mariana cardoso", "ex: joão silva"
+                pl = field_info['placeholder'].lower()
+                if any(k in pl for k in ['ex:', 'exemplo:', 'nome', 'name']):
+                    # Se o placeholder contém "ex:" seguido de texto (padrão Zedy)
+                    return ('name', 92)
                 if 'nome' in signals and not any(k in signals for k in ['sobre', 'last', 'user']):
                     return ('name', 80)
-                if field_info['name'] == 'name' or field_info['id'] == 'name':
-                    return ('name', 85)
                 # Zedy e outros: placeholder ou label com "nome", "seu nome", "name"
                 if any(k in signals for k in ['seu nome', 'your name', 'nome e sobrenome', 'first name']):
                     return ('name', 85)
                 # Campo text genérico no topo da página que não é nenhum outro tipo
                 if inp_type == 'text' and field_info.get('top', 999) < 400:
-                    # Se placeholder ou label tem "nome" de qualquer forma
-                    pl = field_info['placeholder'].lower()
                     lb = field_info['labelText'].lower()
                     if any(k in pl for k in ['nome', 'name']) or any(k in lb for k in ['nome', 'name']):
                         return ('name', 75)

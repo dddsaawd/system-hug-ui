@@ -168,7 +168,7 @@ export default function EngineControl() {
       {/* Fluxo de Automação */}
       <Card className="border-primary/20 bg-primary/5">
         <CardContent className="p-4">
-          <p className="text-xs font-semibold text-primary mb-2">FLUXO DE AUTOMAÇÃO v4.3 (LOCAL)</p>
+          <p className="text-xs font-semibold text-primary mb-2">FLUXO ADAPTATIVO v5.0 (UNIVERSAL)</p>
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             {isProductUrl && (
               <>
@@ -176,13 +176,13 @@ export default function EngineControl() {
                 <span>→</span>
               </>
             )}
-            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">1. Dados Pessoais</span>
+            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">🔍 Scan Campos</span>
             <span>→</span>
-            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">2. CPF / Entrega</span>
+            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">✏️ Preenche Tudo</span>
             <span>→</span>
-            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">3. Tela de Pagamento</span>
+            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">🖱️ Clica Botão</span>
             <span>→</span>
-            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">🔄 Rotaciona Proxy</span>
+            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">🔄 Repete até Sucesso</span>
           </div>
         </CardContent>
       </Card>

@@ -711,15 +711,48 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 browser = await p.chromium.connect_over_cdp(ws_url)
                 session.add_log("Browserless conectado!", "success")
 
+            # ═══ EMULAÇÃO MOBILE (layout mais simples, menos elementos ocultos) ═══
+            mobile_devices = [
+                {
+                    "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+                    "viewport": {"width": 393, "height": 852},
+                    "device_scale_factor": 3,
+                    "is_mobile": True,
+                    "has_touch": True,
+                },
+                {
+                    "user_agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+                    "viewport": {"width": 390, "height": 844},
+                    "device_scale_factor": 3,
+                    "is_mobile": True,
+                    "has_touch": True,
+                },
+                {
+                    "user_agent": "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.119 Mobile Safari/537.36",
+                    "viewport": {"width": 360, "height": 780},
+                    "device_scale_factor": 3,
+                    "is_mobile": True,
+                    "has_touch": True,
+                },
+                {
+                    "user_agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.6312.40 Mobile Safari/537.36",
+                    "viewport": {"width": 412, "height": 915},
+                    "device_scale_factor": 2.625,
+                    "is_mobile": True,
+                    "has_touch": True,
+                },
+            ]
+            device = random.choice(mobile_devices)
+            device_name = "iPhone" if "iPhone" in device["user_agent"] else "Android"
+            session.add_log(f"📱 Emulando {device_name} ({device['viewport']['width']}x{device['viewport']['height']})", "info")
+
             context = await browser.new_context(
                 proxy=context_proxy if context_proxy else None,
-                user_agent=random.choice([
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                ]),
-                viewport={"width": random.choice([1366, 1440, 1920]), "height": random.choice([768, 900, 1080])},
+                user_agent=device["user_agent"],
+                viewport=device["viewport"],
+                device_scale_factor=device.get("device_scale_factor", 3),
+                is_mobile=device.get("is_mobile", True),
+                has_touch=device.get("has_touch", True),
                 locale="pt-BR",
                 timezone_id="America/Sao_Paulo",
             )

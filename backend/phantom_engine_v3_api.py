@@ -838,253 +838,458 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
             cpf_digits = user_data["cpf"].replace(".", "").replace("-", "").replace(" ", "")
 
             # ═══════════════════════════════════════════════════════════
-            # FLUXO DE CHECKOUT ADAPTATIVO UNIVERSAL v5.0
-            # Scan de campos visiveis → preenche tudo → clica botao → repete
-            # Adapta-se a QUALQUER checkout automaticamente
+            # PHANTOM ENGINE v5.5 — DOM-INTELLIGENCE CHECKOUT
+            # Extrai contexto completo de cada campo via JS no DOM
+            # Scoring inteligente para identificar campos com precisão
+            # Funciona em QUALQUER checkout sem configuração
             # ═══════════════════════════════════════════════════════════
 
-            # Mapa de keywords → dados (prioridade por especificidade)
-            FIELD_MAP = {
-                # Nome
-                "name": {"keywords": ["name", "nome", "full_name", "fullname", "customer_name"], "ph_keywords": ["nome", "name"], "value": user_data["name"], "label": "Nome"},
-                # Email
-                "email": {"keywords": ["email", "e-mail", "e_mail"], "ph_keywords": ["email", "@", "e-mail"], "type_match": "email", "value": user_data["email"], "label": "Email"},
-                # Telefone
-                "phone": {"keywords": ["phone", "telefone", "celular", "whatsapp", "tel", "mobile"], "ph_keywords": ["celular", "telefone", "whatsapp", "ddd", "(11)", "(21)", "(67)"], "type_match": "tel", "value": user_data["phone"], "label": "Celular"},
-                # CPF
-                "cpf": {"keywords": ["cpf", "document", "doc", "cpfcnpj", "taxid", "tax_id"], "ph_keywords": ["000.000.000", "cpf", "documento"], "value": cpf_digits, "label": "CPF"},
-                # CEP
-                "cep": {"keywords": ["cep", "zipcode", "zip_code", "zip", "postal_code", "postalcode"], "ph_keywords": ["00000-000", "00000000", "00000", "cep"], "value": addr["cep"], "label": "CEP", "post_delay": 4.0},
-                # Número
-                "numero": {"keywords": ["number", "numero", "num", "addressnumber", "address_number"], "ph_keywords": ["123", "mero", "número", "numero", "nº"], "value": addr["numero"], "label": "Numero"},
-                # Complemento
-                "complemento": {"keywords": ["complement", "complemento", "comp"], "ph_keywords": ["apto", "complemento", "opcional", "apartamento", "bloco"], "value": addr["complemento"] or "", "label": "Complemento", "optional": True},
-                # Rua
-                "rua": {"keywords": ["street", "rua", "logradouro", "address", "endereco", "address_line"], "ph_keywords": ["rua", "logradouro", "endereço", "endereco", "avenida"], "value": addr["rua"], "label": "Rua", "skip_if_filled": True},
-                # Bairro
-                "bairro": {"keywords": ["neighborhood", "bairro", "district"], "ph_keywords": ["bairro", "distrito"], "value": addr["bairro"], "label": "Bairro", "skip_if_filled": True},
-                # Cidade
-                "cidade": {"keywords": ["city", "cidade", "municipio"], "ph_keywords": ["cidade", "município", "municipio"], "value": addr["cidade"], "label": "Cidade", "skip_if_filled": True},
+            # ─── JS que extrai metadados ricos de TODOS os inputs visíveis ───
+            EXTRACT_FIELDS_JS = """() => {
+                const results = [];
+                const inputs = document.querySelectorAll('input, textarea, select');
+                
+                for (const el of inputs) {
+                    const rect = el.getBoundingClientRect();
+                    const style = window.getComputedStyle(el);
+                    
+                    // Só campos visíveis
+                    if (rect.width === 0 || rect.height === 0) continue;
+                    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') continue;
+                    if (el.disabled || el.readOnly) continue;
+                    
+                    const type = (el.type || el.tagName.toLowerCase()).toLowerCase();
+                    if (['hidden', 'submit', 'button', 'file', 'image', 'reset'].includes(type)) continue;
+                    
+                    // Coleta contexto rico
+                    const name = (el.name || '').toLowerCase();
+                    const id = (el.id || '').toLowerCase();
+                    const placeholder = (el.placeholder || '').toLowerCase();
+                    const autocomplete = (el.autocomplete || '').toLowerCase();
+                    const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
+                    const dataTestId = (el.getAttribute('data-testid') || el.getAttribute('data-test') || '').toLowerCase();
+                    
+                    // Label associado
+                    let labelText = '';
+                    if (el.id) {
+                        const label = document.querySelector('label[for="' + el.id + '"]');
+                        if (label) labelText = label.textContent.trim().toLowerCase();
+                    }
+                    if (!labelText) {
+                        const parent = el.closest('label');
+                        if (parent) labelText = parent.textContent.trim().toLowerCase();
+                    }
+                    
+                    // Texto próximo (pai imediato e irmãos)
+                    let nearbyText = '';
+                    const parentEl = el.parentElement;
+                    if (parentEl) {
+                        // Texto do container pai (sem inputs filhos)
+                        const clone = parentEl.cloneNode(true);
+                        clone.querySelectorAll('input, textarea, select').forEach(i => i.remove());
+                        nearbyText = clone.textContent.trim().toLowerCase().substring(0, 100);
+                    }
+                    // Irmão anterior (frequente em forms)
+                    const prev = el.previousElementSibling;
+                    if (prev && prev.tagName !== 'INPUT') {
+                        nearbyText += ' ' + (prev.textContent || '').trim().toLowerCase().substring(0, 50);
+                    }
+                    
+                    // Valor atual
+                    const value = el.value || '';
+                    const isSelect = el.tagName === 'SELECT';
+                    const isCheckbox = type === 'checkbox';
+                    const isRadio = type === 'radio';
+                    
+                    // Classe CSS (para contexto adicional)
+                    const className = (el.className || '').toLowerCase();
+                    
+                    // Índice para referência
+                    el.setAttribute('data-phantom-idx', results.length.toString());
+                    
+                    results.push({
+                        idx: results.length,
+                        tag: el.tagName.toLowerCase(),
+                        type: type,
+                        name: name,
+                        id: id,
+                        placeholder: placeholder,
+                        autocomplete: autocomplete,
+                        ariaLabel: ariaLabel,
+                        labelText: labelText,
+                        nearbyText: nearbyText,
+                        dataTestId: dataTestId,
+                        className: className,
+                        value: value,
+                        isSelect: isSelect,
+                        isCheckbox: isCheckbox,
+                        isRadio: isRadio,
+                        top: rect.top,
+                        inputMode: (el.inputMode || '').toLowerCase(),
+                        maxLength: el.maxLength > 0 ? el.maxLength : null,
+                        pattern: el.pattern || '',
+                    });
+                }
+                return results;
+            }"""
+
+            # ─── Scoring inteligente: classifica cada campo ───
+            def classify_field(field_info: dict) -> tuple:
+                """Retorna (tipo, confiança) baseado em TODOS os sinais do campo."""
+                # Combina todos os sinais em um texto para matching
+                signals = ' '.join([
+                    field_info['name'], field_info['id'], field_info['placeholder'],
+                    field_info['autocomplete'], field_info['ariaLabel'],
+                    field_info['labelText'], field_info['nearbyText'],
+                    field_info['dataTestId'], field_info['className'],
+                    field_info.get('inputMode', ''), field_info.get('pattern', ''),
+                ]).lower()
+
+                inp_type = field_info['type']
+                maxlen = field_info.get('maxLength')
+
+                # === REGRAS DE CLASSIFICAÇÃO (ordem de especificidade) ===
+
+                # EMAIL — type=email é 100% confiável
+                if inp_type == 'email':
+                    return ('email', 100)
+                if any(k in signals for k in ['email', 'e-mail', 'e_mail', '@']):
+                    return ('email', 90)
+
+                # TELEFONE — type=tel é 100% confiável
+                if inp_type == 'tel':
+                    return ('phone', 100)
+                if any(k in signals for k in ['phone', 'telefone', 'celular', 'whatsapp', 'mobile', 'tel ', 'ddd']):
+                    return ('phone', 90)
+                if any(k in signals for k in ['(11)', '(21)', '(67)', '(xx)']):
+                    return ('phone', 80)
+
+                # CPF — muito específico
+                if any(k in signals for k in ['cpf', 'cpfcnpj', 'taxid', 'tax_id', 'tax-id']):
+                    return ('cpf', 95)
+                if '000.000.000' in signals or '000000000' in signals:
+                    return ('cpf', 90)
+                if 'document' in signals and not any(k in signals for k in ['upload', 'file', 'attach']):
+                    return ('cpf', 70)
+
+                # CEP — muito específico  
+                if any(k in signals for k in ['cep', 'zipcode', 'zip_code', 'zip-code', 'postal_code', 'postalcode', 'postal-code']):
+                    return ('cep', 95)
+                if '00000-000' in signals or '00000000' in signals:
+                    return ('cep', 90)
+                if maxlen and maxlen <= 9 and '00000' in signals:
+                    return ('cep', 85)
+
+                # NÚMERO (endereço) — cuidado para não confundir com outros números
+                if any(k in signals for k in ['addressnumber', 'address_number', 'address-number']):
+                    return ('numero', 95)
+                addr_ctx = any(k in signals for k in ['endere', 'address', 'entrega', 'delivery', 'shipping'])
+                if any(k in signals for k in ['numero', 'número', 'nº']) and addr_ctx:
+                    return ('numero', 90)
+                if 'number' in field_info['name'] and addr_ctx:
+                    return ('numero', 85)
+                if any(k in signals for k in ['numero', 'número', 'nº']):
+                    return ('numero', 75)
+                if field_info['placeholder'] in ['123', 'nº', 'n°']:
+                    return ('numero', 80)
+
+                # COMPLEMENTO
+                if any(k in signals for k in ['complemento', 'complement', 'comp ']):
+                    return ('complemento', 90)
+                if any(k in signals for k in ['apto', 'apartamento', 'bloco', 'opcional']):
+                    if addr_ctx or any(k in signals for k in ['numero', 'número', 'cep']):
+                        return ('complemento', 75)
+
+                # RUA / LOGRADOURO
+                if any(k in signals for k in ['logradouro', 'street', 'address_line', 'address-line', 'addressline']):
+                    return ('rua', 90)
+                if 'rua' in signals and addr_ctx:
+                    return ('rua', 85)
+                if 'address' in field_info['name'] and 'number' not in field_info['name']:
+                    return ('rua', 70)
+                if 'endereco' in signals or 'endereço' in signals:
+                    if not any(k in signals for k in ['cep', 'numero', 'número', 'bairro', 'cidade']):
+                        return ('rua', 65)
+
+                # BAIRRO
+                if any(k in signals for k in ['bairro', 'neighborhood', 'district', 'borough']):
+                    return ('bairro', 90)
+
+                # CIDADE
+                if any(k in signals for k in ['cidade', 'city', 'municipio', 'município']):
+                    return ('cidade', 90)
+
+                # ESTADO (select dropdown geralmente)
+                if any(k in signals for k in ['estado', 'state', 'uf ', ' uf']):
+                    return ('estado', 90)
+                if field_info['isSelect'] and any(k in signals for k in ['uf', 'state']):
+                    return ('estado', 85)
+
+                # NOME — mais genérico, verificar por último
+                if any(k in signals for k in ['full_name', 'fullname', 'customer_name', 'nome completo', 'full name']):
+                    return ('name', 95)
+                if field_info['autocomplete'] in ['name', 'given-name', 'family-name']:
+                    return ('name', 90)
+                if 'nome' in signals and not any(k in signals for k in ['sobre', 'last', 'user']):
+                    return ('name', 80)
+                if field_info['name'] == 'name' or field_info['id'] == 'name':
+                    return ('name', 85)
+
+                return ('unknown', 0)
+
+            # ─── Dados para cada tipo de campo ───
+            FIELD_VALUES = {
+                'name': user_data["name"],
+                'email': user_data["email"],
+                'phone': user_data["phone"],
+                'cpf': cpf_digits,
+                'cep': addr["cep"],
+                'numero': addr["numero"],
+                'complemento': addr.get("complemento", ""),
+                'rua': addr["rua"],
+                'bairro': addr["bairro"],
+                'cidade': addr["cidade"],
+                'estado': addr["estado"],
             }
 
-            async def scan_and_fill_fields() -> dict:
-                """Escaneia TODOS os campos visiveis e preenche o que puder. Retorna resumo."""
+            FIELD_LABELS = {
+                'name': 'Nome', 'email': 'Email', 'phone': 'Celular',
+                'cpf': 'CPF', 'cep': 'CEP', 'numero': 'Numero',
+                'complemento': 'Complemento', 'rua': 'Rua',
+                'bairro': 'Bairro', 'cidade': 'Cidade', 'estado': 'Estado',
+            }
+
+            SKIP_IF_FILLED = {'rua', 'bairro', 'cidade', 'estado'}
+            OPTIONAL_FIELDS = {'complemento'}
+            POST_FILL_DELAY = {'cep': 4.5}  # campos que precisam de delay após preenchimento
+
+            async def intelligent_scan_and_fill() -> dict:
+                """Extrai contexto DOM completo via JS e preenche com scoring inteligente."""
                 filled = {}
-                already_filled_fields = set()
                 mask_chars = set("0.-_()/ ")
 
                 try:
-                    inputs = page.locator("input:visible, textarea:visible")
-                    count = await inputs.count()
-                except Exception:
+                    fields = await page.evaluate(EXTRACT_FIELDS_JS)
+                except Exception as e:
+                    session.add_log(f"  Erro ao extrair campos: {str(e)[:50]}", "error")
                     return filled
 
-                for i in range(min(count, 20)):
-                    try:
-                        inp = inputs.nth(i)
-                        inp_name = (await inp.get_attribute("name") or "").lower()
-                        inp_ph = (await inp.get_attribute("placeholder") or "").lower()
-                        inp_type = (await inp.get_attribute("type") or "").lower()
-                        inp_id = (await inp.get_attribute("id") or "").lower()
-                        inp_autocomplete = (await inp.get_attribute("autocomplete") or "").lower()
+                if not fields:
+                    return filled
 
-                        # Pula campos nao preenchíveis
-                        if inp_type in ("hidden", "checkbox", "radio", "submit", "button", "file", "image"):
-                            continue
+                # Classifica todos os campos
+                classified = []
+                for f in fields:
+                    field_type, confidence = classify_field(f)
+                    if field_type != 'unknown' and confidence >= 60:
+                        classified.append((f, field_type, confidence))
 
-                        # Verifica se ja tem valor
-                        val = await inp.input_value()
-                        stripped = (val or "").strip()
-                        has_value = stripped and len(stripped) > 1 and not all(c in mask_chars for c in stripped)
+                # Ordena por confiança (maior primeiro) e deduplica tipos
+                classified.sort(key=lambda x: -x[2])
+                used_types = set()
 
-                        # Identifica qual campo é
-                        matched_field = None
-                        for field_key, field_config in FIELD_MAP.items():
-                            # Match por type HTML
-                            if "type_match" in field_config and inp_type == field_config["type_match"]:
-                                matched_field = field_key
-                                break
-                            # Match por autocomplete
-                            if inp_autocomplete:
-                                for kw in field_config["keywords"]:
-                                    if kw in inp_autocomplete:
-                                        matched_field = field_key
-                                        break
-                            if matched_field:
-                                break
-                            # Match por name/id
-                            combined = inp_name + " " + inp_id
-                            for kw in field_config["keywords"]:
-                                if kw in combined:
-                                    matched_field = field_key
-                                    break
-                            if matched_field:
-                                break
-                            # Match por placeholder
-                            for kw in field_config.get("ph_keywords", []):
-                                if kw in inp_ph:
-                                    matched_field = field_key
-                                    break
-                            if matched_field:
-                                break
-
-                        if not matched_field:
-                            continue
-
-                        field_config = FIELD_MAP[matched_field]
-
-                        # Ja preenchemos este tipo nesta rodada?
-                        if matched_field in already_filled_fields:
-                            continue
-
-                        # Campo opcional sem valor definido?
-                        if field_config.get("optional") and not field_config["value"]:
-                            continue
-
-                        # Campo ja preenchido pelo CEP (rua, bairro, cidade)?
-                        if has_value and field_config.get("skip_if_filled"):
-                            session.add_log(f"  {field_config['label']}: ja preenchido = '{stripped[:25]}'", "info")
-                            already_filled_fields.add(matched_field)
-                            filled[matched_field] = True
-                            continue
-
-                        # Ja tem valor valido? Pula
-                        if has_value:
-                            already_filled_fields.add(matched_field)
-                            filled[matched_field] = True
-                            continue
-
-                        # PREENCHE!
-                        try:
-                            await inp.click()
-                            await asyncio.sleep(random.uniform(0.05, 0.15))
-                            await inp.fill("")
-                            await asyncio.sleep(random.uniform(0.03, 0.08))
-                            await inp.fill(field_config["value"])
-                            await asyncio.sleep(random.uniform(0.1, 0.25))
-                            display = field_config["value"][:25]
-                            session.add_log(f"  {field_config['label']}: {display}", "info")
-                            filled[matched_field] = True
-                            already_filled_fields.add(matched_field)
-
-                            # Delay especial (ex: CEP precisa esperar auto-preenchimento)
-                            if "post_delay" in field_config:
-                                session.add_log(f"  Aguardando auto-preenchimento ({field_config['label']})...", "info")
-                                await asyncio.sleep(field_config["post_delay"])
-                        except Exception as e:
-                            session.add_log(f"  Erro ao preencher {field_config['label']}: {str(e)[:50]}", "error")
-
-                    except Exception:
+                for field_info, field_type, confidence in classified:
+                    if field_type in used_types:
                         continue
+
+                    value = FIELD_VALUES.get(field_type, "")
+                    if not value and field_type in OPTIONAL_FIELDS:
+                        continue
+                    if not value:
+                        continue
+
+                    # Verifica valor atual
+                    current_val = (field_info['value'] or "").strip()
+                    has_value = current_val and len(current_val) > 1 and not all(c in mask_chars for c in current_val)
+
+                    if has_value and field_type in SKIP_IF_FILLED:
+                        label = FIELD_LABELS.get(field_type, field_type)
+                        session.add_log(f"  {label}: ja preenchido = '{current_val[:25]}'", "info")
+                        filled[field_type] = True
+                        used_types.add(field_type)
+                        continue
+
+                    if has_value:
+                        filled[field_type] = True
+                        used_types.add(field_type)
+                        continue
+
+                    # Selects (estado) — tratamento especial
+                    if field_info['isSelect'] and field_type == 'estado':
+                        try:
+                            sel = page.locator(f'[data-phantom-idx="{field_info["idx"]}"]').first
+                            await sel.select_option(value=value)
+                            session.add_log(f"  Estado: {value} (select)", "info")
+                            filled[field_type] = True
+                            used_types.add(field_type)
+                        except Exception:
+                            try:
+                                await sel.select_option(label=value)
+                                filled[field_type] = True
+                                used_types.add(field_type)
+                            except Exception:
+                                pass
+                        continue
+
+                    # PREENCHE via Playwright (garante eventos React/Vue/Angular)
+                    try:
+                        el = page.locator(f'[data-phantom-idx="{field_info["idx"]}"]').first
+                        if not await el.is_visible(timeout=500):
+                            continue
+
+                        await el.click()
+                        await asyncio.sleep(random.uniform(0.05, 0.15))
+                        await el.fill("")
+                        await asyncio.sleep(random.uniform(0.03, 0.08))
+                        await el.fill(value)
+                        await asyncio.sleep(random.uniform(0.1, 0.25))
+
+                        label = FIELD_LABELS.get(field_type, field_type)
+                        display = value[:25] + ("..." if len(value) > 25 else "")
+                        session.add_log(f"  {label}: {display} (score:{confidence})", "info")
+                        filled[field_type] = True
+                        used_types.add(field_type)
+
+                        # Delay pós-preenchimento (CEP → auto-complete)
+                        if field_type in POST_FILL_DELAY:
+                            session.add_log(f"  Aguardando auto-preenchimento ({label})...", "info")
+                            await asyncio.sleep(POST_FILL_DELAY[field_type])
+
+                    except Exception as e:
+                        session.add_log(f"  Erro {FIELD_LABELS.get(field_type, field_type)}: {str(e)[:40]}", "error")
 
                 return filled
 
-            async def handle_radios_and_selects() -> bool:
-                """Lida com radio buttons (frete, pagamento) e dropdowns (estado, pais)."""
+            async def handle_interactive_elements() -> bool:
+                """Lida com todos os elementos interativos: radios, selects, pais, PIX, frete."""
                 did_something = False
 
-                # Selecionar pais Brasil
+                # País Brasil
                 try:
-                    pais = await smart_select_country_brazil(page, session)
-                    if pais:
+                    if await smart_select_country_brazil(page, session):
                         did_something = True
                 except Exception:
                     pass
 
-                # Selecionar estado em dropdown
+                # Estado dropdown
                 try:
-                    estado = await select_state_dropdown(page, addr["estado"], session)
-                    if estado:
+                    if await select_state_dropdown(page, addr["estado"], session):
                         did_something = True
                 except Exception:
                     pass
 
-                # Selecionar frete (se visivel)
+                # Frete
                 try:
-                    frete = await select_shipping_option(page, session)
-                    if frete:
+                    if await select_shipping_option(page, session):
                         did_something = True
                 except Exception:
                     pass
 
-                # Selecionar PIX (se visivel)
+                # PIX
                 try:
-                    pix = await select_pix_payment(page, session)
-                    if pix:
+                    if await select_pix_payment(page, session):
                         did_something = True
                 except Exception:
                     pass
 
                 return did_something
 
-            # ─── Loop Adaptativo Principal ───
-            max_loops = 15
-            last_url = ""
+            async def handle_popups_and_modals():
+                """Fecha popups, modais de cookie, upsells que bloqueiam o fluxo."""
+                close_selectors = [
+                    'button[aria-label="Close"]', 'button[aria-label="Fechar"]',
+                    '.close-modal', '.modal-close', '[data-dismiss="modal"]',
+                    'button:has-text("Fechar")', 'button:has-text("×")',
+                    'button:has-text("Não, obrigado")', 'button:has-text("Não quero")',
+                    'button:has-text("Recusar")', 'button:has-text("Pular")',
+                    # Cookie banners
+                    'button:has-text("Aceitar")', 'button:has-text("Aceito")',
+                    'button:has-text("Accept")', 'button:has-text("OK")',
+                    '#cookie-accept', '.cookie-accept', '[data-action="accept-cookies"]',
+                ]
+                for sel in close_selectors:
+                    try:
+                        el = page.locator(sel).first
+                        if await el.is_visible(timeout=300):
+                            await el.click()
+                            session.add_log(f"  Popup/modal fechado: {sel[:40]}", "info")
+                            await asyncio.sleep(0.5)
+                    except Exception:
+                        continue
+
+            # ─── Loop Adaptativo Principal v5.5 ───
+            max_loops = 18
+            last_url = page.url
             stale_count = 0
+            last_filled_count = 0
 
             for loop_num in range(1, max_loops + 1):
                 session.add_log(f"═══ SCAN {loop_num}/{max_loops} ═══", "info")
 
-                # 0. Verificar sucesso PRIMEIRO
+                # 0. Verificar sucesso
                 if await check_success(page, session):
                     session.add_log("VENDA GERADA com sucesso!", "success")
                     session.successes += 1
                     return True
 
-                # 1. Escanear e preencher TODOS os campos visiveis
-                filled = await scan_and_fill_fields()
+                # 1. Fechar popups/modais que bloqueiam
+                await handle_popups_and_modals()
+
+                # 2. Scan inteligente DOM + preenchimento
+                filled = await intelligent_scan_and_fill()
+                filled_count = len(filled)
                 if filled:
-                    session.add_log(f"  Campos preenchidos: {list(filled.keys())}", "info")
+                    session.add_log(f"  Campos: {list(filled.keys())}", "info")
 
-                # 2. Lidar com radios/selects (frete, PIX, pais, estado)
-                await handle_radios_and_selects()
+                # 3. Elementos interativos (radios, selects, PIX, frete)
+                radios_done = await handle_interactive_elements()
 
-                # 3. Pequena pausa humana
+                # 4. Pausa humana
                 await asyncio.sleep(random.uniform(0.3, 0.8))
 
-                # 4. Clicar no melhor botao disponivel
+                # 5. Clicar melhor botão
                 clicked = await universal_click_button(page, session, loop_num)
 
-                if not clicked and not filled:
-                    # Nada para fazer — pagina pode estar carregando
+                # 6. Detecção de progresso
+                any_action = bool(filled) or radios_done or clicked
+                if not any_action:
                     stale_count += 1
-                    session.add_log(f"  Nenhuma acao possivel (stale #{stale_count})", "info")
-                    if stale_count >= 4:
-                        session.add_log("  Muitas tentativas sem progresso. Encerrando.", "error")
+                    session.add_log(f"  Sem acao possivel (stale #{stale_count})", "info")
+                    if stale_count >= 5:
+                        session.add_log("  Sem progresso. Encerrando.", "error")
                         break
                     await asyncio.sleep(2.0)
                     continue
                 else:
                     stale_count = 0
 
-                # 5. Aguardar navegacao/transicao
-                await asyncio.sleep(random.uniform(2.0, 3.5))
+                # 7. Aguardar transição
+                await asyncio.sleep(random.uniform(1.5, 3.0))
 
-                # 6. Detectar mudanca de URL (progresso)
+                # 8. Detectar mudança de URL
                 current_url = page.url
                 if current_url != last_url:
-                    session.add_log(f"  URL mudou: {current_url[:80]}", "info")
+                    session.add_log(f"  Navegou: {current_url[:80]}", "info")
                     last_url = current_url
-                    # Aguardar carregamento
                     try:
-                        await page.wait_for_load_state("networkidle", timeout=10000)
+                        await page.wait_for_load_state("networkidle", timeout=15000)
                     except Exception:
-                        pass
+                        await asyncio.sleep(2.0)
 
-                # 7. Verificar sucesso apos acao
+                # 9. Verificar sucesso pós-ação
                 if await check_success(page, session):
                     session.add_log("VENDA GERADA com sucesso!", "success")
                     session.successes += 1
                     return True
 
             # ═══ FIM DO LOOP ═══
-            session.add_log("Fluxo completo. Verificacao final...", "info")
-            await asyncio.sleep(2.0)
+            session.add_log("Verificacao final...", "info")
+            await asyncio.sleep(3.0)
             if await check_success(page, session):
                 session.successes += 1
                 return True
 
-            session.add_log(f"Fluxo percorrido mas venda nao confirmada apos {max_loops} scans.", "error")
+            session.add_log(f"Fluxo nao concluido apos {max_loops} scans.", "error")
             session.failures += 1
             return False
 

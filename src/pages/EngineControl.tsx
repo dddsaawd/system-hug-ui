@@ -403,6 +403,15 @@ export default function EngineControl() {
           </CardContent>
         </Card>
 
+        <div className="space-y-4">
+          <DirectApiPanel
+            targetUrl={targetUrl}
+            engineMode={engineMode}
+            onEngineModeChange={setEngineMode}
+            onDirectConfigChange={setDirectApiConfig}
+            disabled={isRunning}
+          />
+
         <Card className="border-border/50">
           <CardContent className="p-0">
             <Tabs defaultValue="logs" className="w-full">

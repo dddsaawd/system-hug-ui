@@ -536,6 +536,7 @@ export default function EngineControl() {
             </Tabs>
           </CardContent>
         </Card>
+        </div>
       </div>
     </div>
   );

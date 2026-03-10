@@ -1020,46 +1020,16 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             session.add_log(f"  Fallback CEP falhou: {e}", "error")
                     
                     session.add_log("  Aguardando auto-preenchimento do CEP...", "info")
-                    await asyncio.sleep(3.5)
+                    await asyncio.sleep(4.0)
                     
-                    # Apos CEP auto-preencher, pode ja ter campo Numero visivel
-                    # Tenta preencher Numero se visivel
-                    numero_selectors = [
-                        'input[name="number"]', 'input[name="numero"]', 'input#number',
-                        'input[name="addressNumber"]', 'input[name="address_number"]',
-                        'input[placeholder*="mero"]', 'input[placeholder*="Número"]',
-                    ]
-                    await smart_fill_field(page, numero_selectors, addr["numero"], "Numero", session)
-                    
-                    # Tenta clicar ESCOLHER FRETE ou CONTINUAR
-                    clicked = False
-                    for text in ["ESCOLHER FRETE", "Escolher Frete", "Escolher frete",
-                                 "CONTINUAR", "Continuar"]:
-                        try:
-                            btn = page.get_by_role("button", name=text, exact=False).first
-                            if await btn.is_visible(timeout=500):
-                                await btn.scroll_into_view_if_needed()
-                                await btn.click(timeout=5000)
-                                session.add_log(f"  Botao '{text}' clicado!", "success")
-                                clicked = True
-                                break
-                        except Exception:
-                            continue
-                    if not clicked:
-                        for text in ["ESCOLHER FRETE", "CONTINUAR"]:
-                            try:
-                                el = page.locator(f'a:has-text("{text}")').first
-                                if await el.is_visible(timeout=300):
-                                    await el.click(timeout=5000)
-                                    session.add_log(f"  Link '{text}' clicado!", "success")
-                                    clicked = True
-                                    break
-                            except Exception:
-                                continue
+                    # CEP NÃO TEM BOTÃO — a página expande automaticamente
+                    # após o CEP ser validado, mostrando campos de endereço.
+                    # NÃO tenta clicar nenhum botão aqui.
+                    # Apenas marca CEP como completo e o próximo loop detectará "endereco".
                     
                     etapas_completadas.add("cep")
-                    session.add_log("  Aguardando proxima etapa...", "info")
-                    await asyncio.sleep(random.uniform(2.0, 3.5))
+                    session.add_log("  CEP preenchido. Aguardando campos de endereco expandirem...", "info")
+                    await asyncio.sleep(random.uniform(1.5, 2.5))
                     continue
 
                 # ──── ENDEREÇO (Número obrigatório + Escolher Frete) ────

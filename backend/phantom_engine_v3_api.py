@@ -714,107 +714,123 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
             # ═══════════════════════════════════════════════════════════
 
             async def detect_current_step() -> str:
-                """Detecta em qual etapa o checkout esta baseado nos elementos visiveis."""
-                # Verifica se tem QR code / sucesso
+                """
+                Detecta em qual etapa o checkout esta baseado nos elementos visiveis.
+                IMPORTANTE: Checa etapas INICIAIS primeiro para evitar falsos positivos.
+                O checkout pode mostrar elementos de pagamento (PIX, CPF) na sidebar
+                mesmo quando ainda estamos na etapa de dados pessoais.
+                Usa etapas_completadas para não regredir.
+                """
+                # 0. Verifica se tem QR code / sucesso (prioridade maxima)
                 if await check_success(page, session):
                     return "success"
-                
-                # Verifica se tem botao FINALIZAR COMPRA visivel
-                for text in ["FINALIZAR COMPRA", "Finalizar compra", "Finalizar Compra"]:
-                    try:
-                        btn = page.get_by_role("button", name=text, exact=False).first
-                        if await btn.is_visible(timeout=500):
-                            return "finalizacao"
-                    except Exception:
-                        pass
-                
-                # Verifica se tem campo CPF na tela de pagamento (placeholder 000.000.000-00)
-                try:
-                    cpf_field = page.locator('input[placeholder*="000.000.000"]').first
-                    if await cpf_field.is_visible(timeout=500):
-                        return "pagamento"
-                except Exception:
-                    pass
-                
-                # Verifica se tem opcao PIX visivel (tela de pagamento)
-                for sel in ['text="Opção de pagamento"', 'text="Opcao de pagamento"', 'text="forma de pagamento"']:
-                    try:
-                        el = page.locator(sel).first
-                        if await el.is_visible(timeout=500):
-                            return "pagamento"
-                    except Exception:
-                        pass
-                
-                # Verifica se tem botao IR PARA PAGAMENTO (tela de frete)
-                for text in ["IR PARA PAGAMENTO", "Ir para Pagamento", "Ir para pagamento"]:
-                    try:
-                        btn = page.get_by_role("button", name=text, exact=False).first
-                        if await btn.is_visible(timeout=500):
-                            return "frete"
-                    except Exception:
-                        pass
-                try:
-                    btn = page.locator('a:has-text("IR PARA PAGAMENTO")').first
-                    if await btn.is_visible(timeout=300):
-                        return "frete"
-                except Exception:
-                    pass
-                
-                # Verifica se tem botao ESCOLHER FRETE (tela de endereco)
-                for text in ["ESCOLHER FRETE", "Escolher Frete", "Escolher frete"]:
-                    try:
-                        btn = page.get_by_role("button", name=text, exact=False).first
-                        if await btn.is_visible(timeout=500):
-                            return "endereco"
-                    except Exception:
-                        pass
-                try:
-                    btn = page.locator('a:has-text("ESCOLHER FRETE")').first
-                    if await btn.is_visible(timeout=300):
+
+                # Helper para checar visibilidade
+                async def is_any_visible(selectors, timeout=400):
+                    for sel in selectors:
+                        try:
+                            el = page.locator(sel).first
+                            if await el.is_visible(timeout=timeout):
+                                return True
+                        except Exception:
+                            pass
+                    return False
+
+                async def is_button_visible(texts, timeout=400):
+                    for text in texts:
+                        try:
+                            btn = page.get_by_role("button", name=text, exact=False).first
+                            if await btn.is_visible(timeout=timeout):
+                                return True
+                        except Exception:
+                            pass
+                        try:
+                            el = page.locator(f'a:has-text("{text}")').first
+                            if await el.is_visible(timeout=200):
+                                return True
+                        except Exception:
+                            pass
+                    return False
+
+                # 1. DADOS PESSOAIS — checa se campo Nome está visível E vazio
+                if "dados_pessoais" not in etapas_completadas:
+                    nome_selectors = [
+                        'input[name="name"]', 'input[name="nome"]', 'input[placeholder*="Nome"]',
+                        'input[autocomplete="name"]',
+                    ]
+                    for sel in nome_selectors:
+                        try:
+                            el = page.locator(sel).first
+                            if await el.is_visible(timeout=400):
+                                val = await el.input_value()
+                                if not val or len(val.strip()) < 3:
+                                    # Campo nome visível e vazio = etapa dados pessoais
+                                    # Checa se CEP também está na mesma tela
+                                    cep_visible = await is_any_visible([
+                                        'input[name="cep"]', 'input[name="zipcode"]',
+                                        'input[placeholder*="CEP"]', 'input[placeholder*="00000-000"]',
+                                    ], timeout=300)
+                                    return "dados_pessoais_com_cep" if cep_visible else "dados_pessoais"
+                        except Exception:
+                            pass
+
+                # 2. CEP (separado)
+                if "cep" not in etapas_completadas and "dados_pessoais" in etapas_completadas:
+                    cep_selectors = [
+                        'input[name="cep"]', 'input[name="zipcode"]', 'input[name="zip_code"]',
+                        'input[placeholder*="CEP"]', 'input[placeholder*="00000-000"]',
+                    ]
+                    for sel in cep_selectors:
+                        try:
+                            el = page.locator(sel).first
+                            if await el.is_visible(timeout=400):
+                                val = await el.input_value()
+                                if not val or len(val.strip()) < 5:
+                                    return "cep"
+                        except Exception:
+                            pass
+
+                # 3. ENDEREÇO (campo Número + botão ESCOLHER FRETE)
+                if "endereco" not in etapas_completadas:
+                    if await is_button_visible(["ESCOLHER FRETE", "Escolher Frete", "Escolher frete"]):
                         return "endereco"
-                except Exception:
-                    pass
-                
-                # Verifica se tem campo CEP visivel (tela de CEP/entrega)
-                cep_visible = False
-                for sel in ['input[name="cep"]', 'input[name="zipcode"]', 'input[name="zip_code"]',
-                            'input[placeholder*="CEP"]', 'input[placeholder*="00000-000"]', 'input[placeholder*="00000000"]']:
-                    try:
-                        el = page.locator(sel).first
-                        if await el.is_visible(timeout=300):
-                            cep_visible = True
-                            break
-                    except Exception:
-                        pass
-                
-                # Verifica se tem campo Nome visivel (tela de dados pessoais)
-                nome_visible = False
-                for sel in ['input[name="name"]', 'input[name="nome"]', 'input[placeholder*="Nome"]',
-                            'input[autocomplete="name"]']:
-                    try:
-                        el = page.locator(sel).first
-                        if await el.is_visible(timeout=300):
-                            nome_visible = True
-                            break
-                    except Exception:
-                        pass
-                
-                if nome_visible and cep_visible:
-                    return "dados_pessoais_com_cep"
-                if nome_visible:
-                    return "dados_pessoais"
-                if cep_visible:
-                    return "cep"
-                
-                # Verifica campo Numero (endereco)
-                for sel in ['input[name="number"]', 'input[name="numero"]', 'input[placeholder*="mero"]']:
-                    try:
-                        el = page.locator(sel).first
-                        if await el.is_visible(timeout=300):
-                            return "endereco"
-                    except Exception:
-                        pass
-                
+                    # Ou campo numero visível e vazio
+                    for sel in ['input[name="number"]', 'input[name="numero"]', 'input[placeholder*="mero"]',
+                                'input[placeholder*="Número"]']:
+                        try:
+                            el = page.locator(sel).first
+                            if await el.is_visible(timeout=300):
+                                val = await el.input_value()
+                                if not val or len(val.strip()) == 0:
+                                    return "endereco"
+                        except Exception:
+                            pass
+
+                # 4. FRETE (botão IR PARA PAGAMENTO visível)
+                if "frete" not in etapas_completadas:
+                    if await is_button_visible(["IR PARA PAGAMENTO", "Ir para Pagamento", "Ir para pagamento",
+                                                "Ir para o pagamento"]):
+                        return "frete"
+
+                # 5. PAGAMENTO (PIX + CPF)
+                if "pagamento" not in etapas_completadas:
+                    # Verifica se estamos na tela de pagamento: CPF visível OU opções PIX
+                    cpf_visible = await is_any_visible([
+                        'input[placeholder*="000.000.000"]', 'input[name="cpf"]',
+                        'input[name="document"]',
+                    ], timeout=400)
+                    pix_visible = await is_any_visible([
+                        'label:has-text("PIX")', 'label:has-text("Pix")',
+                        'button:has-text("PIX")', 'span:has-text("PIX")',
+                    ], timeout=400)
+                    if cpf_visible or pix_visible:
+                        return "pagamento"
+
+                # 6. FINALIZAÇÃO (botão FINALIZAR COMPRA)
+                if await is_button_visible(["FINALIZAR COMPRA", "Finalizar compra", "Finalizar Compra",
+                                            "Gerar Pix", "GERAR PIX"]):
+                    return "finalizacao"
+
                 return "desconhecido"
 
             # ─── Execucao sequencial das etapas ───

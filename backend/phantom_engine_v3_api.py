@@ -1133,9 +1133,13 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 if any(k in signals for k in ['bairro', 'neighborhood', 'district', 'borough']):
                     return ('bairro', 90)
 
-                # CIDADE
+                # CIDADE — cuidado para não confundir com campo "nome" que tem placeholder com nome de pessoa
                 if any(k in signals for k in ['cidade', 'city', 'municipio', 'município']):
-                    return ('cidade', 90)
+                    # Se o label ou id diz "nome" ou "name", NÃO é cidade
+                    if any(k in field_info['labelText'] for k in ['nome', 'name']) or field_info['id'] in ('name', 'nome'):
+                        pass  # Vai cair no scoring de nome abaixo
+                    else:
+                        return ('cidade', 90)
 
                 # ESTADO (select dropdown geralmente)
                 if any(k in signals for k in ['estado', 'state', 'uf ', ' uf']):

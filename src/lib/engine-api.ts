@@ -9,9 +9,21 @@ export const startEngineSchema = z.object({
   headless: z.boolean().default(true),
   rotate_after_successes: z.number().min(1).max(100).default(1),
   is_product_url: z.boolean().default(false),
+  capture_network: z.boolean().default(false),
 });
 
 export type StartEnginePayload = z.infer<typeof startEngineSchema>;
+
+export interface CapturedRequest {
+  timestamp: string;
+  method: string;
+  url: string;
+  status: number;
+  request_headers: Record<string, string>;
+  request_body: string | null;
+  response_body: string | null;
+  content_type: string;
+}
 
 export interface EngineStatus {
   id: string;
@@ -21,6 +33,7 @@ export interface EngineStatus {
   total_attempts: number;
   uptime_seconds: number;
   logs: { timestamp: string; message: string; type: "success" | "error" | "info" }[];
+  captured_requests: CapturedRequest[];
 }
 
 // Get saved config from localStorage

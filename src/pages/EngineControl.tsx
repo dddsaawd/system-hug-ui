@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { MetricCard } from "@/components/MetricCard";
 import { FileUploadButton } from "@/components/FileUploadButton";
+import { DirectApiPanel } from "@/components/DirectApiPanel";
 import { toast } from "sonner";
 import {
   startEngine,
@@ -20,6 +21,7 @@ import {
   getEngineConfig,
   type StartEnginePayload,
   type EngineStatus,
+  type EngineMode,
 } from "@/lib/engine-api";
 
 export default function EngineControl() {
@@ -31,7 +33,8 @@ export default function EngineControl() {
   const [rotateAfter, setRotateAfter] = useState(1);
   const [isProductUrl, setIsProductUrl] = useState(false);
   const [captureNetwork, setCaptureNetwork] = useState(false);
-
+  const [engineMode, setEngineMode] = useState<EngineMode>("browser");
+  const [directApiConfig, setDirectApiConfig] = useState<StartEnginePayload["direct_api_config"]>(undefined);
   const [sessionId, setSessionId] = useState<string | null>(
     () => localStorage.getItem("phantom_session_id")
   );
@@ -104,6 +107,8 @@ export default function EngineControl() {
       rotate_after_successes: rotateAfter,
       is_product_url: isProductUrl,
       capture_network: captureNetwork,
+      engine_mode: engineMode,
+      ...(engineMode === "direct_api" && directApiConfig ? { direct_api_config: directApiConfig } : {}),
       ...(cpfs.length > 0 ? { cpfs } : {}),
     };
 
@@ -149,7 +154,7 @@ export default function EngineControl() {
           <Monitor className="h-6 w-6 text-primary" /> Navegador Fantasma
         </h1>
         <p className="text-sm text-muted-foreground">
-          PHANTOM ENGINE v6.0 — DOM-Intelligence · Detecção de Transição de Etapa
+          PHANTOM ENGINE v7.0 — DOM-Intelligence · API Direto · Detecção de Transição
         </p>
       </div>
 
@@ -169,23 +174,41 @@ export default function EngineControl() {
       )}
 
       {/* Fluxo de Automação */}
-      <Card className="border-primary/20 bg-primary/5">
+      <Card className={`border-primary/20 ${engineMode === "direct_api" ? "bg-chart-warning/5 border-chart-warning/20" : "bg-primary/5"}`}>
         <CardContent className="p-4">
-          <p className="text-xs font-semibold text-primary mb-2">DOM-INTELLIGENCE v6.0 (TRANSIÇÃO DE ETAPA)</p>
+          <p className="text-xs font-semibold text-primary mb-2">
+            {engineMode === "direct_api" 
+              ? "⚡ MODO API DIRETO — Sem navegador, máxima velocidade" 
+              : "🌐 MODO NAVEGADOR — DOM-INTELLIGENCE v7.0"}
+          </p>
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            {isProductUrl && (
+            {engineMode === "direct_api" ? (
               <>
-                <span className="rounded bg-chart-warning/10 px-2 py-1 text-chart-warning font-medium">0. Produto → Carrinho</span>
+                <span className="rounded bg-chart-warning/10 px-2 py-1 text-chart-warning font-medium">1. Resolve Token</span>
                 <span>→</span>
+                <span className="rounded bg-chart-warning/10 px-2 py-1 text-chart-warning font-medium">2. Gera Dados</span>
+                <span>→</span>
+                <span className="rounded bg-chart-warning/10 px-2 py-1 text-chart-warning font-medium">3. POST Pedido</span>
+                <span>→</span>
+                <span className="rounded bg-chart-warning/10 px-2 py-1 text-chart-warning font-medium">4. Gera PIX ✅</span>
+              </>
+            ) : (
+              <>
+                {isProductUrl && (
+                  <>
+                    <span className="rounded bg-chart-warning/10 px-2 py-1 text-chart-warning font-medium">0. Produto → Carrinho</span>
+                    <span>→</span>
+                  </>
+                )}
+                <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">🔍 Scan Campos</span>
+                <span>→</span>
+                <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">✏️ Preenche Tudo</span>
+                <span>→</span>
+                <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">🖱️ Clica Botão</span>
+                <span>→</span>
+                <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">🔄 Repete até Sucesso</span>
               </>
             )}
-            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">🔍 Scan Campos</span>
-            <span>→</span>
-            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">✏️ Preenche Tudo</span>
-            <span>→</span>
-            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">🖱️ Clica Botão</span>
-            <span>→</span>
-            <span className="rounded bg-primary/10 px-2 py-1 text-primary font-medium">🔄 Repete até Sucesso</span>
           </div>
         </CardContent>
       </Card>
@@ -206,7 +229,7 @@ export default function EngineControl() {
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+      <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         {/* Config Form */}
         <Card className="border-border/50">
           <CardHeader>
@@ -380,6 +403,15 @@ export default function EngineControl() {
           </CardContent>
         </Card>
 
+        <div className="space-y-4">
+          <DirectApiPanel
+            targetUrl={targetUrl}
+            engineMode={engineMode}
+            onEngineModeChange={setEngineMode}
+            onDirectConfigChange={setDirectApiConfig}
+            disabled={isRunning}
+          />
+
         <Card className="border-border/50">
           <CardContent className="p-0">
             <Tabs defaultValue="logs" className="w-full">
@@ -504,6 +536,7 @@ export default function EngineControl() {
             </Tabs>
           </CardContent>
         </Card>
+        </div>
       </div>
     </div>
   );

@@ -1,4 +1,8 @@
 import { z } from "zod";
+import type { ZedyDirectPayload } from "./zedy-platform";
+
+// ─── Engine Mode ───────────────────────────────────────────────────────
+export type EngineMode = "browser" | "direct_api";
 
 // Validation schemas
 export const startEngineSchema = z.object({
@@ -10,6 +14,15 @@ export const startEngineSchema = z.object({
   rotate_after_successes: z.number().min(1).max(100).default(1),
   is_product_url: z.boolean().default(false),
   capture_network: z.boolean().default(false),
+  engine_mode: z.enum(["browser", "direct_api"]).default("browser"),
+  direct_api_config: z.object({
+    platform: z.enum(["zedy", "yampi"]),
+    token: z.string().min(1),
+    store_id: z.number().optional(),
+    checkout_id: z.number().optional(),
+    payment_method: z.enum(["pix", "credit_card", "boleto"]).default("pix"),
+    zipcode: z.string().optional(),
+  }).optional(),
 });
 
 export type StartEnginePayload = z.infer<typeof startEngineSchema>;

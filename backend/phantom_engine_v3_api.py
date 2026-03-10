@@ -709,135 +709,253 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
             cpf_digits = user_data["cpf"].replace(".", "").replace("-", "").replace(" ", "")
 
             # ═══════════════════════════════════════════════════════════
-            # LOOP DE ETAPAS — ate 6 etapas
+            # FLUXO DE CHECKOUT SEQUENCIAL v4.2
+            # Detecta a etapa atual com base nos elementos visiveis
             # ═══════════════════════════════════════════════════════════
 
-            max_etapas = 6
-            campos_ja_preenchidos = set()  # Evita preencher o mesmo campo 2x
+            async def detect_current_step() -> str:
+                """Detecta em qual etapa o checkout esta baseado nos elementos visiveis."""
+                # Verifica se tem QR code / sucesso
+                if await check_success(page, session):
+                    return "success"
+                
+                # Verifica se tem botao FINALIZAR COMPRA visivel
+                for text in ["FINALIZAR COMPRA", "Finalizar compra", "Finalizar Compra"]:
+                    try:
+                        btn = page.get_by_role("button", name=text, exact=False).first
+                        if await btn.is_visible(timeout=500):
+                            return "finalizacao"
+                    except Exception:
+                        pass
+                
+                # Verifica se tem campo CPF na tela de pagamento (placeholder 000.000.000-00)
+                try:
+                    cpf_field = page.locator('input[placeholder*="000.000.000"]').first
+                    if await cpf_field.is_visible(timeout=500):
+                        return "pagamento"
+                except Exception:
+                    pass
+                
+                # Verifica se tem opcao PIX visivel (tela de pagamento)
+                for sel in ['text="Opção de pagamento"', 'text="Opcao de pagamento"', 'text="forma de pagamento"']:
+                    try:
+                        el = page.locator(sel).first
+                        if await el.is_visible(timeout=500):
+                            return "pagamento"
+                    except Exception:
+                        pass
+                
+                # Verifica se tem botao IR PARA PAGAMENTO (tela de frete)
+                for text in ["IR PARA PAGAMENTO", "Ir para Pagamento", "Ir para pagamento"]:
+                    try:
+                        btn = page.get_by_role("button", name=text, exact=False).first
+                        if await btn.is_visible(timeout=500):
+                            return "frete"
+                    except Exception:
+                        pass
+                try:
+                    btn = page.locator('a:has-text("IR PARA PAGAMENTO")').first
+                    if await btn.is_visible(timeout=300):
+                        return "frete"
+                except Exception:
+                    pass
+                
+                # Verifica se tem botao ESCOLHER FRETE (tela de endereco)
+                for text in ["ESCOLHER FRETE", "Escolher Frete", "Escolher frete"]:
+                    try:
+                        btn = page.get_by_role("button", name=text, exact=False).first
+                        if await btn.is_visible(timeout=500):
+                            return "endereco"
+                    except Exception:
+                        pass
+                try:
+                    btn = page.locator('a:has-text("ESCOLHER FRETE")').first
+                    if await btn.is_visible(timeout=300):
+                        return "endereco"
+                except Exception:
+                    pass
+                
+                # Verifica se tem campo CEP visivel (tela de CEP/entrega)
+                cep_visible = False
+                for sel in ['input[name="cep"]', 'input[name="zipcode"]', 'input[name="zip_code"]',
+                            'input[placeholder*="CEP"]', 'input[placeholder*="00000-000"]', 'input[placeholder*="00000000"]']:
+                    try:
+                        el = page.locator(sel).first
+                        if await el.is_visible(timeout=300):
+                            cep_visible = True
+                            break
+                    except Exception:
+                        pass
+                
+                # Verifica se tem campo Nome visivel (tela de dados pessoais)
+                nome_visible = False
+                for sel in ['input[name="name"]', 'input[name="nome"]', 'input[placeholder*="Nome"]',
+                            'input[autocomplete="name"]']:
+                    try:
+                        el = page.locator(sel).first
+                        if await el.is_visible(timeout=300):
+                            nome_visible = True
+                            break
+                    except Exception:
+                        pass
+                
+                if nome_visible and cep_visible:
+                    return "dados_pessoais_com_cep"
+                if nome_visible:
+                    return "dados_pessoais"
+                if cep_visible:
+                    return "cep"
+                
+                # Verifica campo Numero (endereco)
+                for sel in ['input[name="number"]', 'input[name="numero"]', 'input[placeholder*="mero"]']:
+                    try:
+                        el = page.locator(sel).first
+                        if await el.is_visible(timeout=300):
+                            return "endereco"
+                    except Exception:
+                        pass
+                
+                return "desconhecido"
 
-            for etapa in range(1, max_etapas + 1):
-                session.add_log(f"═══ ETAPA {etapa} ═══", "info")
-                await asyncio.sleep(random.uniform(0.3, 0.7))
+            # ─── Execucao sequencial das etapas ───
+            max_loops = 8
+            etapas_completadas = set()
 
-                campos_nesta_etapa = 0
+            for loop_num in range(1, max_loops + 1):
+                step = await detect_current_step()
+                session.add_log(f"═══ LOOP {loop_num} | Etapa detectada: {step.upper()} ═══", "info")
 
-                # --- NOME ---
-                if "nome" not in campos_ja_preenchidos:
+                if step == "success":
+                    session.add_log("VENDA GERADA com sucesso!", "success")
+                    session.successes += 1
+                    return True
+
+                # ──── DADOS PESSOAIS (com ou sem CEP junto) ────
+                if step in ("dados_pessoais", "dados_pessoais_com_cep"):
+                    # Nome
                     nome_selectors = [
                         'input[name="name"]', 'input[name="nome"]', 'input#name',
                         'input[name="customer_name"]', 'input[name="full_name"]',
-                        'input[name="fullName"]', 'input[name="customerName"]',
-                        'input[placeholder*="Nome"]', 'input[placeholder*="nome"]',
-                        'input[placeholder*="Maria"]', 'input[placeholder*="completo"]',
-                        'input[autocomplete="name"]', 'input[autocomplete="given-name"]',
+                        'input[name="fullName"]', 'input[placeholder*="Nome"]',
+                        'input[placeholder*="nome"]', 'input[autocomplete="name"]',
                     ]
                     filled = await smart_fill_field(page, nome_selectors, user_data["name"], "Nome", session)
                     if not filled:
-                        filled = await smart_fill_field_by_label(page, ["Nome completo", "Nome", "Seu nome"], user_data["name"], "Nome", session)
-                    if filled:
-                        campos_ja_preenchidos.add("nome")
-                        campos_nesta_etapa += 1
+                        await smart_fill_field_by_label(page, ["Nome completo", "Nome", "Seu nome"], user_data["name"], "Nome", session)
 
-                # --- EMAIL ---
-                if "email" not in campos_ja_preenchidos:
+                    # Email
                     email_selectors = [
-                        'input[name="email"]', 'input[name="e-mail"]', 'input#email',
-                        'input[name="customer_email"]', 'input[name="customerEmail"]',
-                        'input[type="email"]',
-                        'input[placeholder*="email"]', 'input[placeholder*="Email"]',
-                        'input[placeholder*="e-mail"]', 'input[placeholder*="@"]',
+                        'input[name="email"]', 'input[type="email"]', 'input#email',
+                        'input[placeholder*="email"]', 'input[placeholder*="@"]',
                         'input[autocomplete="email"]',
                     ]
                     filled = await smart_fill_field(page, email_selectors, user_data["email"], "Email", session)
                     if not filled:
-                        filled = await smart_fill_field_by_label(page, ["E-mail", "Email", "Seu e-mail"], user_data["email"], "Email", session)
-                    if filled:
-                        campos_ja_preenchidos.add("email")
-                        campos_nesta_etapa += 1
+                        await smart_fill_field_by_label(page, ["E-mail", "Email"], user_data["email"], "Email", session)
 
-                # --- PAIS (+55) ---
-                if "pais" not in campos_ja_preenchidos:
-                    if await smart_select_country_brazil(page, session):
-                        campos_ja_preenchidos.add("pais")
+                    # Pais (+55)
+                    await smart_select_country_brazil(page, session)
 
-                # --- TELEFONE ---
-                if "phone" not in campos_ja_preenchidos:
+                    # Telefone
                     phone_selectors = [
-                        'input[name="phone"]', 'input[name="telefone"]', 'input#phone',
-                        'input[name="celular"]', 'input[name="cellphone"]',
-                        'input[name="customer_phone"]', 'input[name="whatsapp"]',
-                        'input[type="tel"]',
-                        'input[placeholder*="celular"]', 'input[placeholder*="Celular"]',
-                        'input[placeholder*="telefone"]', 'input[placeholder*="Telefone"]',
-                        'input[placeholder*="WhatsApp"]', 'input[placeholder*="Whatsapp"]',
-                        'input[placeholder*="(11)"]', 'input[placeholder*="99999"]',
-                        'input[placeholder*="DDD"]',
+                        'input[name="phone"]', 'input[name="telefone"]', 'input[name="celular"]',
+                        'input[type="tel"]', 'input[placeholder*="celular"]', 'input[placeholder*="Celular"]',
+                        'input[placeholder*="telefone"]', 'input[placeholder*="WhatsApp"]',
+                        'input[placeholder*="(11)"]', 'input[placeholder*="DDD"]',
                         'input[autocomplete="tel"]',
                     ]
                     filled = await smart_fill_field(page, phone_selectors, user_data["phone"], "Celular", session)
                     if not filled:
-                        filled = await smart_fill_field_by_label(page, ["Celular", "Telefone", "WhatsApp", "Celular/WhatsApp", "Celular/Whatsapp"], user_data["phone"], "Celular", session)
-                    if filled:
-                        campos_ja_preenchidos.add("phone")
-                        campos_nesta_etapa += 1
+                        await smart_fill_field_by_label(page, ["Celular", "Telefone", "WhatsApp", "Celular/WhatsApp"], user_data["phone"], "Celular", session)
 
-                # --- CPF (pode aparecer em QUALQUER etapa) ---
-                if "cpf" not in campos_ja_preenchidos:
-                    cpf_selectors = [
-                        'input[name="cpf"]', 'input[name="document"]', 'input#cpf',
-                        'input[name="doc"]', 'input[name="customer_cpf"]',
-                        'input[name="cpfCnpj"]', 'input[name="taxId"]',
-                        'input[name="cpf_cnpj"]', 'input[name="documentNumber"]',
-                        'input[placeholder*="CPF"]', 'input[placeholder*="cpf"]',
-                        'input[placeholder*="000.000.000"]', 'input[placeholder*="documento"]',
-                        'input[placeholder*="Documento"]',
-                    ]
-                    filled = await smart_fill_field(page, cpf_selectors, cpf_digits, "CPF", session)
-                    if not filled:
-                        filled = await smart_fill_field_by_label(page, ["CPF", "CPF/CNPJ", "CPF/CNPJ do pagador", "Documento", "CPF ou CNPJ"], cpf_digits, "CPF", session)
-                    if filled:
-                        campos_ja_preenchidos.add("cpf")
-                        campos_nesta_etapa += 1
+                    # Se tem CEP nesta mesma tela, preenche tambem
+                    if step == "dados_pessoais_com_cep":
+                        cep_selectors = [
+                            'input[name="cep"]', 'input[name="zipcode"]', 'input#cep',
+                            'input[name="zip_code"]', 'input[placeholder*="CEP"]',
+                            'input[placeholder*="00000-000"]', 'input[placeholder*="00000000"]',
+                        ]
+                        filled = await smart_fill_field(page, cep_selectors, addr["cep"], "CEP", session)
+                        if not filled:
+                            await smart_fill_field_by_label(page, ["CEP"], addr["cep"], "CEP", session)
+                        session.add_log("  Aguardando auto-preenchimento do CEP...", "info")
+                        await asyncio.sleep(3.0)
 
-                # --- CEP ---
-                if "cep" not in campos_ja_preenchidos:
+                    # Clica CONTINUAR
+                    await asyncio.sleep(random.uniform(0.3, 0.6))
+                    for text in ["CONTINUAR", "Continuar", "Continue", "Próximo", "PRÓXIMO"]:
+                        try:
+                            btn = page.get_by_role("button", name=text, exact=False).first
+                            if await btn.is_visible(timeout=500):
+                                await btn.scroll_into_view_if_needed()
+                                await btn.click(timeout=5000)
+                                session.add_log(f"  Botao '{text}' clicado!", "success")
+                                break
+                        except Exception:
+                            continue
+                    
+                    etapas_completadas.add("dados_pessoais")
+                    session.add_log("  Aguardando proxima etapa...", "info")
+                    await asyncio.sleep(random.uniform(2.0, 3.5))
+                    continue
+
+                # ──── CEP (separado) ────
+                elif step == "cep":
                     cep_selectors = [
                         'input[name="cep"]', 'input[name="zipcode"]', 'input#cep',
-                        'input[name="zip_code"]', 'input[name="postalCode"]',
-                        'input[name="postal_code"]', 'input[name="zip"]',
-                        'input[placeholder*="CEP"]', 'input[placeholder*="cep"]',
+                        'input[name="zip_code"]', 'input[placeholder*="CEP"]',
                         'input[placeholder*="00000-000"]', 'input[placeholder*="00000000"]',
-                        'input[autocomplete="postal-code"]',
                     ]
                     filled = await smart_fill_field(page, cep_selectors, addr["cep"], "CEP", session)
                     if not filled:
-                        filled = await smart_fill_field_by_label(page, ["CEP", "Código Postal", "Codigo Postal"], addr["cep"], "CEP", session)
-                    if filled:
-                        campos_ja_preenchidos.add("cep")
-                        campos_nesta_etapa += 1
-                        # Espera auto-preenchimento do CEP
-                        session.add_log("  Aguardando auto-preenchimento do CEP...", "info")
-                        await asyncio.sleep(random.uniform(2.0, 3.5))
-
-                # --- RUA ---
-                if "rua" not in campos_ja_preenchidos:
-                    rua_selectors = [
-                        'input[name="street"]', 'input[name="rua"]', 'input#street',
-                        'input[name="address"]', 'input[name="endereco"]',
-                        'input[name="address_street"]', 'input[name="logradouro"]',
-                        'input[placeholder*="Rua"]', 'input[placeholder*="rua"]',
-                        'input[placeholder*="Avenida"]', 'input[placeholder*="endereco"]',
-                        'input[placeholder*="Endereço"]', 'input[placeholder*="logradouro"]',
+                        await smart_fill_field_by_label(page, ["CEP"], addr["cep"], "CEP", session)
+                    
+                    session.add_log("  Aguardando auto-preenchimento do CEP...", "info")
+                    await asyncio.sleep(3.5)
+                    
+                    # Apos CEP auto-preencher, pode ja ter campo Numero visivel
+                    # Tenta preencher Numero se visivel
+                    numero_selectors = [
+                        'input[name="number"]', 'input[name="numero"]', 'input#number',
+                        'input[name="addressNumber"]', 'input[name="address_number"]',
+                        'input[placeholder*="mero"]', 'input[placeholder*="Número"]',
                     ]
-                    filled = await smart_fill_field(page, rua_selectors, addr["rua"], "Rua", session)
-                    if not filled:
-                        filled = await smart_fill_field_by_label(page, ["Rua", "Endereço", "Endereço/Rua", "Logradouro"], addr["rua"], "Rua", session)
-                    if filled:
-                        campos_ja_preenchidos.add("rua")
-                        campos_nesta_etapa += 1
+                    await smart_fill_field(page, numero_selectors, addr["numero"], "Numero", session)
+                    
+                    # Tenta clicar ESCOLHER FRETE ou CONTINUAR
+                    clicked = False
+                    for text in ["ESCOLHER FRETE", "Escolher Frete", "Escolher frete",
+                                 "CONTINUAR", "Continuar"]:
+                        try:
+                            btn = page.get_by_role("button", name=text, exact=False).first
+                            if await btn.is_visible(timeout=500):
+                                await btn.scroll_into_view_if_needed()
+                                await btn.click(timeout=5000)
+                                session.add_log(f"  Botao '{text}' clicado!", "success")
+                                clicked = True
+                                break
+                        except Exception:
+                            continue
+                    if not clicked:
+                        for text in ["ESCOLHER FRETE", "CONTINUAR"]:
+                            try:
+                                el = page.locator(f'a:has-text("{text}")').first
+                                if await el.is_visible(timeout=300):
+                                    await el.click(timeout=5000)
+                                    session.add_log(f"  Link '{text}' clicado!", "success")
+                                    clicked = True
+                                    break
+                            except Exception:
+                                continue
+                    
+                    etapas_completadas.add("cep")
+                    session.add_log("  Aguardando proxima etapa...", "info")
+                    await asyncio.sleep(random.uniform(2.0, 3.5))
+                    continue
 
-                # --- NUMERO ---
-                if "numero" not in campos_ja_preenchidos:
+                # ──── ENDEREÇO (Número obrigatório + Escolher Frete) ────
+                elif step == "endereco":
+                    # Preenche Numero (OBRIGATORIO - campo que mais falha)
                     numero_selectors = [
                         'input[name="number"]', 'input[name="numero"]', 'input#number',
                         'input[name="addressNumber"]', 'input[name="address_number"]',
@@ -848,136 +966,199 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     ]
                     filled = await smart_fill_field(page, numero_selectors, addr["numero"], "Numero", session)
                     if not filled:
-                        filled = await smart_fill_field_by_label(page, ["Número", "Numero", "Nº"], addr["numero"], "Numero", session)
-                    if filled:
-                        campos_ja_preenchidos.add("numero")
-                        campos_nesta_etapa += 1
+                        filled = await smart_fill_field_by_label(page, ["Número", "Numero", "Nº", "N."], addr["numero"], "Numero", session)
+                    if not filled:
+                        session.add_log("  AVISO: Campo Numero nao encontrado!", "error")
 
-                # --- COMPLEMENTO ---
-                if "complemento" not in campos_ja_preenchidos and addr["complemento"]:
-                    comp_selectors = [
-                        'input[name="complement"]', 'input[name="complemento"]', 'input#complement',
-                        'input[name="address_complement"]', 'input[name="comp"]',
-                        'input[placeholder*="Apto"]', 'input[placeholder*="Bloco"]',
-                        'input[placeholder*="complemento"]', 'input[placeholder*="Complemento"]',
-                        'input[placeholder*="Opcional"]',
+                    # Complemento (opcional)
+                    if addr["complemento"]:
+                        comp_selectors = [
+                            'input[name="complement"]', 'input[name="complemento"]',
+                            'input[placeholder*="Apto"]', 'input[placeholder*="complemento"]',
+                            'input[placeholder*="Opcional"]',
+                        ]
+                        await smart_fill_field(page, comp_selectors, addr["complemento"], "Complemento", session)
+
+                    # Clica ESCOLHER FRETE
+                    await asyncio.sleep(random.uniform(0.3, 0.6))
+                    clicked = False
+                    for text in ["ESCOLHER FRETE", "Escolher Frete", "Escolher frete",
+                                 "CONTINUAR", "Continuar"]:
+                        try:
+                            btn = page.get_by_role("button", name=text, exact=False).first
+                            if await btn.is_visible(timeout=500):
+                                await btn.scroll_into_view_if_needed()
+                                await btn.click(timeout=5000)
+                                session.add_log(f"  Botao '{text}' clicado!", "success")
+                                clicked = True
+                                break
+                        except Exception:
+                            continue
+                    if not clicked:
+                        for text in ["ESCOLHER FRETE", "CONTINUAR"]:
+                            try:
+                                el = page.locator(f'a:has-text("{text}")').first
+                                if await el.is_visible(timeout=300):
+                                    await el.click(timeout=5000)
+                                    session.add_log(f"  Link '{text}' clicado!", "success")
+                                    clicked = True
+                                    break
+                            except Exception:
+                                continue
+
+                    etapas_completadas.add("endereco")
+                    session.add_log("  Aguardando proxima etapa...", "info")
+                    await asyncio.sleep(random.uniform(2.0, 3.5))
+                    continue
+
+                # ──── FRETE (selecionar opcao + Ir para Pagamento) ────
+                elif step == "frete":
+                    # Clica na opcao de frete
+                    frete_selecionado = await select_shipping_option(page, session)
+                    if not frete_selecionado:
+                        session.add_log("  Tentando clicar primeiro radio de frete...", "info")
+                        try:
+                            radio = page.locator('input[type="radio"]').first
+                            if await radio.is_visible(timeout=1000):
+                                await radio.click()
+                                session.add_log("  Radio de frete clicado!", "success")
+                        except Exception:
+                            pass
+                    
+                    await asyncio.sleep(random.uniform(0.5, 1.0))
+                    
+                    # Clica IR PARA PAGAMENTO
+                    clicked = False
+                    for text in ["IR PARA PAGAMENTO", "Ir para Pagamento", "Ir para pagamento",
+                                 "Ir para o pagamento", "CONTINUAR", "Continuar"]:
+                        try:
+                            btn = page.get_by_role("button", name=text, exact=False).first
+                            if await btn.is_visible(timeout=500):
+                                await btn.scroll_into_view_if_needed()
+                                await btn.click(timeout=5000)
+                                session.add_log(f"  Botao '{text}' clicado!", "success")
+                                clicked = True
+                                break
+                        except Exception:
+                            continue
+                    if not clicked:
+                        for text in ["IR PARA PAGAMENTO", "CONTINUAR"]:
+                            try:
+                                el = page.locator(f'a:has-text("{text}")').first
+                                if await el.is_visible(timeout=300):
+                                    await el.click(timeout=5000)
+                                    session.add_log(f"  Link '{text}' clicado!", "success")
+                                    clicked = True
+                                    break
+                            except Exception:
+                                continue
+
+                    etapas_completadas.add("frete")
+                    session.add_log("  Aguardando proxima etapa...", "info")
+                    await asyncio.sleep(random.uniform(2.0, 3.5))
+                    continue
+
+                # ──── PAGAMENTO (PIX + CPF) ────
+                elif step == "pagamento":
+                    # Seleciona PIX
+                    await select_pix_payment(page, session)
+                    await asyncio.sleep(random.uniform(0.5, 1.0))
+
+                    # Preenche CPF (na tela de pagamento)
+                    cpf_selectors = [
+                        'input[name="cpf"]', 'input[name="document"]', 'input#cpf',
+                        'input[name="doc"]', 'input[name="cpfCnpj"]', 'input[name="taxId"]',
+                        'input[placeholder*="000.000.000"]', 'input[placeholder*="CPF"]',
+                        'input[placeholder*="cpf"]',
                     ]
-                    filled = await smart_fill_field(page, comp_selectors, addr["complemento"], "Complemento", session)
+                    filled = await smart_fill_field(page, cpf_selectors, cpf_digits, "CPF", session)
                     if not filled:
-                        filled = await smart_fill_field_by_label(page, ["Complemento", "Complemento (Opcional)"], addr["complemento"], "Complemento", session)
-                    if filled:
-                        campos_ja_preenchidos.add("complemento")
-                        campos_nesta_etapa += 1
+                        filled = await smart_fill_field_by_label(page, ["CPF", "CPF/CNPJ", "Documento"], cpf_digits, "CPF", session)
 
-                # --- BAIRRO ---
-                if "bairro" not in campos_ja_preenchidos:
-                    bairro_selectors = [
-                        'input[name="neighborhood"]', 'input[name="bairro"]', 'input#neighborhood',
-                        'input[name="district"]', 'input[name="address_neighborhood"]',
-                        'input[placeholder*="bairro"]', 'input[placeholder*="Bairro"]',
-                        'input[placeholder*="Seu bairro"]',
-                    ]
-                    filled = await smart_fill_field(page, bairro_selectors, addr["bairro"], "Bairro", session)
-                    if not filled:
-                        filled = await smart_fill_field_by_label(page, ["Bairro", "Seu bairro"], addr["bairro"], "Bairro", session)
-                    if filled:
-                        campos_ja_preenchidos.add("bairro")
-                        campos_nesta_etapa += 1
+                    etapas_completadas.add("pagamento")
+                    
+                    # Tenta clicar FINALIZAR COMPRA direto (pode estar na mesma tela)
+                    await asyncio.sleep(random.uniform(0.5, 1.0))
+                    clicked = False
+                    for text in ["FINALIZAR COMPRA", "Finalizar compra", "Finalizar Compra",
+                                 "Gerar Pix", "GERAR PIX", "Pagar agora", "PAGAR AGORA",
+                                 "Concluir compra", "CONCLUIR COMPRA"]:
+                        try:
+                            btn = page.get_by_role("button", name=text, exact=False).first
+                            if await btn.is_visible(timeout=500):
+                                await btn.scroll_into_view_if_needed()
+                                await asyncio.sleep(random.uniform(0.3, 0.6))
+                                await btn.click(timeout=5000)
+                                session.add_log(f"  Botao '{text}' clicado!", "success")
+                                clicked = True
+                                break
+                        except Exception:
+                            continue
+                    
+                    if not clicked:
+                        # Fallback: CONTINUAR
+                        for text in ["CONTINUAR", "Continuar"]:
+                            try:
+                                btn = page.get_by_role("button", name=text, exact=False).first
+                                if await btn.is_visible(timeout=500):
+                                    await btn.click(timeout=5000)
+                                    session.add_log(f"  Botao '{text}' clicado!", "success")
+                                    break
+                            except Exception:
+                                continue
 
-                # --- CIDADE ---
-                if "cidade" not in campos_ja_preenchidos:
-                    cidade_selectors = [
-                        'input[name="city"]', 'input[name="cidade"]', 'input#city',
-                        'input[name="address_city"]',
-                        'input[placeholder*="cidade"]', 'input[placeholder*="Cidade"]',
-                        'input[placeholder*="Sua cidade"]',
-                    ]
-                    filled = await smart_fill_field(page, cidade_selectors, addr["cidade"], "Cidade", session)
-                    if not filled:
-                        filled = await smart_fill_field_by_label(page, ["Cidade", "Sua cidade"], addr["cidade"], "Cidade", session)
-                    if filled:
-                        campos_ja_preenchidos.add("cidade")
-                        campos_nesta_etapa += 1
+                    session.add_log("  Aguardando resultado...", "info")
+                    await asyncio.sleep(random.uniform(3.0, 5.0))
+                    
+                    if await check_success(page, session):
+                        session.successes += 1
+                        return True
+                    continue
 
-                # --- ESTADO ---
-                if "estado" not in campos_ja_preenchidos:
-                    # Tenta input primeiro
-                    estado_selectors = [
-                        'input[name="state"]', 'input[name="estado"]', 'input#state',
-                        'input[name="uf"]', 'input[name="address_state"]',
-                        'input[placeholder*="UF"]', 'input[placeholder*="Estado"]',
-                        'input[placeholder*="estado"]',
-                    ]
-                    filled = await smart_fill_field(page, estado_selectors, addr["estado"], "Estado", session)
-                    if not filled:
-                        filled = await smart_fill_field_by_label(page, ["Estado", "UF"], addr["estado"], "Estado", session)
-                    if not filled:
-                        # Tenta dropdown <select>
-                        filled = await select_state_dropdown(page, addr["estado"], session)
-                    if filled:
-                        campos_ja_preenchidos.add("estado")
-                        campos_nesta_etapa += 1
+                # ──── FINALIZACAO (botao FINALIZAR COMPRA) ────
+                elif step == "finalizacao":
+                    # NÃO clica em upsell (chapeu, etc) — vai direto no FINALIZAR COMPRA
+                    await asyncio.sleep(random.uniform(0.3, 0.6))
+                    for text in ["FINALIZAR COMPRA", "Finalizar compra", "Finalizar Compra",
+                                 "Gerar Pix", "GERAR PIX"]:
+                        try:
+                            btn = page.get_by_role("button", name=text, exact=False).first
+                            if await btn.is_visible(timeout=500):
+                                await btn.scroll_into_view_if_needed()
+                                await asyncio.sleep(random.uniform(0.3, 0.6))
+                                await btn.click(timeout=5000)
+                                session.add_log(f"  Botao '{text}' clicado!", "success")
+                                break
+                        except Exception:
+                            continue
 
-                # --- SELECIONAR FRETE (se opcoes de frete estiverem visiveis) ---
-                frete_selecionado = await select_shipping_option(page, session)
+                    etapas_completadas.add("finalizacao")
+                    session.add_log("  Aguardando resultado...", "info")
+                    await asyncio.sleep(random.uniform(3.0, 5.0))
 
-                # --- SELECIONAR PIX (se estiver na tela de pagamento) ---
-                pix_selecionado = await select_pix_payment(page, session)
+                    if await check_success(page, session):
+                        session.successes += 1
+                        return True
+                    continue
 
-                session.add_log(f"  Etapa {etapa}: {campos_nesta_etapa} campos preenchidos nesta etapa", "info")
-                await asyncio.sleep(random.uniform(0.3, 0.6))
-
-                # --- VERIFICA SUCESSO ANTES DE CLICAR BOTAO ---
-                if await check_success(page, session):
-                    session.successes += 1
-                    return True
-
-                # --- CLICAR NO BOTAO ---
-                url_antes = page.url
-                botao_clicado = await universal_click_button(page, session, etapa)
-
-                if not botao_clicado:
-                    # Se nao achou botao e nao preencheu campos, pode ser tela final
-                    if campos_nesta_etapa == 0:
-                        session.add_log(f"  Nenhum botao e nenhum campo na etapa {etapa}. Verificando sucesso...", "info")
-                        await asyncio.sleep(1.0)
-                        if await check_success(page, session):
-                            session.successes += 1
-                            return True
+                # ──── DESCONHECIDO ────
+                else:
+                    session.add_log(f"  Etapa desconhecida. Tentando botao generico...", "info")
+                    botao_clicado = await universal_click_button(page, session, loop_num)
+                    if not botao_clicado:
+                        session.add_log("  Nenhum botao encontrado. Encerrando.", "error")
                         break
-                    else:
-                        # Preencheu campos mas nao achou botao — tenta scroll e retry
-                        session.add_log("  Tentando scroll para encontrar botao...", "info")
-                        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                        await asyncio.sleep(1.0)
-                        botao_clicado = await universal_click_button(page, session, etapa)
-                        if not botao_clicado:
-                            session.add_log("  Botao nao encontrado mesmo apos scroll.", "error")
-                            break
+                    await asyncio.sleep(random.uniform(2.0, 3.5))
+                    continue
 
-                # --- ESPERA TRANSICAO ENTRE ETAPAS ---
-                session.add_log("  Aguardando proxima etapa...", "info")
-                await asyncio.sleep(random.uniform(1.5, 3.0))
-
-                # Verifica se a URL mudou (indica transicao de etapa)
-                url_depois = page.url
-                if url_antes != url_depois:
-                    session.add_log(f"  URL mudou: ...{url_depois[-40:]}", "info")
-
-                # Verifica sucesso apos transicao
-                if await check_success(page, session):
-                    session.successes += 1
-                    return True
-
-            # ═══ FIM DO LOOP DE ETAPAS ═══
-            # Ultima verificacao de sucesso
+            # ═══ FIM DO LOOP ═══
             session.add_log("Fluxo completo. Verificacao final...", "info")
             await asyncio.sleep(2.0)
             if await check_success(page, session):
                 session.successes += 1
                 return True
 
-            session.add_log("Fluxo percorrido mas venda nao confirmada.", "error")
+            session.add_log(f"Fluxo percorrido mas venda nao confirmada. Etapas completadas: {etapas_completadas}", "error")
             session.failures += 1
             return False
 

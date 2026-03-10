@@ -154,6 +154,7 @@ class EngineSession:
             "total_attempts": self.total_attempts,
             "uptime_seconds": self.uptime_seconds,
             "logs": self.logs,
+            "captured_requests": self.captured_requests[-100:],  # últimas 100
         }
 
 sessions: dict[str, EngineSession] = {}

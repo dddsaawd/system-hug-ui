@@ -1205,6 +1205,16 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 if not fields:
                     return filled
 
+                # DEBUG: mostra todos os campos raw detectados
+                for f in fields[:15]:
+                    ftype, fscore = classify_field(f)
+                    session.add_log(
+                        f"  🔎 [{ftype}:{fscore}] name={f['name'][:20]} id={f['id'][:20]} "
+                        f"ph={f['placeholder'][:20]} label={f['labelText'][:25]} "
+                        f"type={f['type']} top={int(f.get('top', 0))}",
+                        "info"
+                    )
+
                 # Classifica todos os campos
                 classified = []
                 for f in fields:

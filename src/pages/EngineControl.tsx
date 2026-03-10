@@ -33,7 +33,8 @@ export default function EngineControl() {
   const [rotateAfter, setRotateAfter] = useState(1);
   const [isProductUrl, setIsProductUrl] = useState(false);
   const [captureNetwork, setCaptureNetwork] = useState(false);
-
+  const [engineMode, setEngineMode] = useState<EngineMode>("browser");
+  const [directApiConfig, setDirectApiConfig] = useState<StartEnginePayload["direct_api_config"]>(undefined);
   const [sessionId, setSessionId] = useState<string | null>(
     () => localStorage.getItem("phantom_session_id")
   );

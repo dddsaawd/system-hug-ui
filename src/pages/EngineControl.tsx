@@ -205,14 +205,34 @@ export default function EngineControl() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label>URL do Checkout *</Label>
+              <div className="flex items-center justify-between">
+                <Label>{isProductUrl ? "URL do Produto *" : "URL do Checkout *"}</Label>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={isProductUrl}
+                    onCheckedChange={setIsProductUrl}
+                    disabled={isRunning}
+                  />
+                  <Label className="text-xs cursor-pointer text-muted-foreground">
+                    {isProductUrl ? "🛒 Link de Produto" : "💳 Link de Checkout"}
+                  </Label>
+                </div>
+              </div>
               <Input
                 value={targetUrl}
                 onChange={(e) => setTargetUrl(e.target.value)}
-                placeholder="https://seguro.loja.com/checkout/..."
+                placeholder={isProductUrl
+                  ? "https://loja.com/produto/nome-do-produto"
+                  : "https://seguro.loja.com/checkout/..."
+                }
                 disabled={isRunning}
               />
-              <p className="text-xs text-muted-foreground">URL completa da página de checkout alvo.</p>
+              <p className="text-xs text-muted-foreground">
+                {isProductUrl
+                  ? "O motor vai abrir o produto, clicar em Comprar, passar pelo carrinho e chegar no checkout automaticamente."
+                  : "URL completa da página de checkout alvo."
+                }
+              </p>
             </div>
 
             <div className="space-y-2">

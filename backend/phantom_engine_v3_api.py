@@ -1198,7 +1198,108 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
 
             SKIP_IF_FILLED = {'rua', 'bairro', 'cidade', 'estado'}
             OPTIONAL_FIELDS = {'complemento'}
-            POST_FILL_DELAY = {'cep': 4.5}  # campos que precisam de delay após preenchimento
+            POST_FILL_DELAY = {'cep': 5.0}  # campos que precisam de delay após preenchimento (CEP → auto-complete endereço)
+
+            async def wait_for_address_expansion_after_cep(filled: dict) -> dict:
+                """Após preencher CEP, aguarda a expansão dos campos de endereço e preenche-os."""
+                if 'cep' not in filled:
+                    return filled
+                
+                session.add_log("  🏠 CEP preenchido — aguardando expansão de endereço...", "info")
+                
+                # Aguarda até 8s para campos de endereço aparecerem
+                for attempt in range(8):
+                    await asyncio.sleep(1.0)
+                    try:
+                        new_fields = await page.evaluate(EXTRACT_FIELDS_JS)
+                        if not new_fields:
+                            continue
+                        
+                        # Verifica se apareceram campos de endereço
+                        addr_types_found = set()
+                        for f in new_fields:
+                            ftype, fscore = classify_field(f)
+                            if ftype in ('rua', 'numero', 'bairro', 'complemento', 'cidade', 'estado') and fscore >= 60:
+                                addr_types_found.add(ftype)
+                        
+                        if len(addr_types_found) >= 2:
+                            session.add_log(f"  ✅ Campos de endereço expandidos: {list(addr_types_found)}", "success")
+                            
+                            # Preenche os novos campos
+                            used_types = set(filled.keys())
+                            classified_new = []
+                            for f in new_fields:
+                                ftype, fconf = classify_field(f)
+                                if ftype in addr_types_found and ftype not in used_types and fconf >= 60:
+                                    classified_new.append((f, ftype, fconf))
+                            
+                            classified_new.sort(key=lambda x: -x[2])
+                            for field_info, field_type, confidence in classified_new:
+                                if field_type in used_types:
+                                    continue
+                                value = FIELD_VALUES.get(field_type, "")
+                                if not value and field_type in OPTIONAL_FIELDS:
+                                    continue
+                                if not value:
+                                    continue
+                                
+                                current_val = (field_info['value'] or "").strip()
+                                mask_chars_set = set("0.-_()/ ")
+                                has_val = current_val and len(current_val) > 1 and not all(c in mask_chars_set for c in current_val)
+                                
+                                if has_val and field_type in SKIP_IF_FILLED:
+                                    label = FIELD_LABELS.get(field_type, field_type)
+                                    session.add_log(f"  {label}: auto-preenchido = '{current_val[:25]}'", "info")
+                                    filled[field_type] = True
+                                    used_types.add(field_type)
+                                    continue
+                                
+                                if has_val:
+                                    filled[field_type] = True
+                                    used_types.add(field_type)
+                                    continue
+                                
+                                # Selects (estado)
+                                if field_info['isSelect'] and field_type == 'estado':
+                                    try:
+                                        sel = page.locator(f'[data-phantom-idx="{field_info["idx"]}"]').first
+                                        await sel.select_option(value=value)
+                                        session.add_log(f"  Estado: {value} (select)", "info")
+                                        filled[field_type] = True
+                                        used_types.add(field_type)
+                                    except Exception:
+                                        try:
+                                            await sel.select_option(label=value)
+                                            filled[field_type] = True
+                                            used_types.add(field_type)
+                                        except Exception:
+                                            pass
+                                    continue
+                                
+                                # Preencher campo
+                                try:
+                                    el = page.locator(f'[data-phantom-idx="{field_info["idx"]}"]').first
+                                    if not await el.is_visible(timeout=500):
+                                        continue
+                                    await el.click()
+                                    await asyncio.sleep(random.uniform(0.05, 0.15))
+                                    await el.fill("")
+                                    await asyncio.sleep(random.uniform(0.03, 0.08))
+                                    await el.fill(value)
+                                    await asyncio.sleep(random.uniform(0.1, 0.25))
+                                    label = FIELD_LABELS.get(field_type, field_type)
+                                    session.add_log(f"  {label}: {value[:25]} (score:{confidence})", "info")
+                                    filled[field_type] = True
+                                    used_types.add(field_type)
+                                except Exception as e:
+                                    session.add_log(f"  Erro preenchendo {field_type}: {str(e)[:40]}", "error")
+                            
+                            return filled
+                    except Exception as e:
+                        session.add_log(f"  Erro checando expansão: {str(e)[:40]}", "error")
+                
+                session.add_log("  ⚠️ Campos de endereço não expandiram após CEP", "info")
+                return filled
 
             async def intelligent_scan_and_fill() -> dict:
                 """Extrai contexto DOM completo via JS e preenche com scoring inteligente."""

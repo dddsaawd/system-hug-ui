@@ -146,7 +146,7 @@ export default function EngineControl() {
           <Monitor className="h-6 w-6 text-primary" /> Navegador Fantasma
         </h1>
         <p className="text-sm text-muted-foreground">
-          PHANTOM ENGINE v5.0 — Playwright Local + Checkout Adaptativo Universal
+          PHANTOM ENGINE v5.5 — DOM-Intelligence · Checkout Adaptativo Universal
         </p>
       </div>
 

@@ -28,6 +28,7 @@ export default function EngineControl() {
   const [intervalSec, setIntervalSec] = useState(120);
   const [headless, setHeadless] = useState(true);
   const [rotateAfter, setRotateAfter] = useState(1);
+  const [isProductUrl, setIsProductUrl] = useState(false);
 
   const [sessionId, setSessionId] = useState<string | null>(
     () => localStorage.getItem("phantom_session_id")

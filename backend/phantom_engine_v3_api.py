@@ -99,6 +99,7 @@ class StartPayload(BaseModel):
     headless: bool = True
     rotate_after_successes: int = Field(default=1, ge=1, le=100)
     is_product_url: bool = Field(default=False)  # True = navega pelo produto/carrinho antes
+    capture_network: bool = Field(default=False)  # True = captura requests/responses do checkout
 
 class LogEntry(BaseModel):
     timestamp: str
@@ -128,6 +129,7 @@ class EngineSession:
         self.logs: list[dict] = []
         self.task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
+        self.captured_requests: list[dict] = []  # Network capture
 
     def add_log(self, message: str, log_type: str = "info"):
         self.logs.append({
@@ -152,6 +154,7 @@ class EngineSession:
             "total_attempts": self.total_attempts,
             "uptime_seconds": self.uptime_seconds,
             "logs": self.logs,
+            "captured_requests": self.captured_requests[-100:],  # últimas 100
         }
 
 sessions: dict[str, EngineSession] = {}
@@ -721,6 +724,88 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 timezone_id="America/Sao_Paulo",
             )
             page = await context.new_page()
+
+            # ═══ INTERCEPTADOR DE REDE ═══
+            if session.payload.capture_network:
+                session.add_log("🔍 Captura de rede ATIVA — interceptando requests/responses", "info")
+                
+                async def on_response(response):
+                    """Captura responses de API (ignora assets estáticos)."""
+                    try:
+                        url = response.url
+                        # Filtra: só APIs relevantes (ignora imagens, CSS, JS, fonts)
+                        skip_ext = ('.png', '.jpg', '.jpeg', '.gif', '.svg', '.css', '.js', '.woff', '.woff2', '.ttf', '.ico', '.webp')
+                        skip_domains = ('google', 'facebook', 'analytics', 'hotjar', 'gtm', 'doubleclick', 'cloudflare', 'cdn')
+                        
+                        if any(url.lower().endswith(ext) for ext in skip_ext):
+                            return
+                        if any(d in url.lower() for d in skip_domains):
+                            return
+                        
+                        status = response.status
+                        method = response.request.method
+                        
+                        # Só captura POST/PUT/PATCH (ações de checkout) e GETs de API
+                        is_api = any(k in url.lower() for k in ['/api/', '/checkout/', '/order', '/cart', '/shipping', '/payment', '/customer', '/address', '/freight', '/frete', '/cep/', '/pix', '/boleto', '/transaction', '/v1/', '/v2/', '/graphql'])
+                        is_mutation = method in ('POST', 'PUT', 'PATCH', 'DELETE')
+                        
+                        if not is_api and not is_mutation:
+                            return
+                        
+                        # Captura request body
+                        req_body = None
+                        try:
+                            req_body = response.request.post_data
+                        except Exception:
+                            pass
+                        
+                        # Captura response body (só JSON)
+                        res_body = None
+                        content_type = response.headers.get('content-type', '')
+                        if 'json' in content_type or 'text' in content_type:
+                            try:
+                                res_body = await response.text()
+                                if len(res_body) > 5000:
+                                    res_body = res_body[:5000] + "... (truncado)"
+                            except Exception:
+                                pass
+                        
+                        # Captura headers relevantes
+                        req_headers = {}
+                        try:
+                            all_headers = response.request.headers
+                            for k, v in all_headers.items():
+                                kl = k.lower()
+                                if kl in ('authorization', 'x-api-key', 'x-token', 'x-csrf-token', 'x-requested-with', 'content-type', 'accept', 'cookie', 'x-session-id', 'x-cart-id', 'x-checkout-id'):
+                                    req_headers[k] = v
+                        except Exception:
+                            pass
+                        
+                        captured = {
+                            "timestamp": datetime.utcnow().isoformat() + "Z",
+                            "method": method,
+                            "url": url,
+                            "status": status,
+                            "request_headers": req_headers,
+                            "request_body": req_body,
+                            "response_body": res_body,
+                            "content_type": content_type,
+                        }
+                        
+                        session.captured_requests.append(captured)
+                        if len(session.captured_requests) > 200:
+                            session.captured_requests = session.captured_requests[-200:]
+                        
+                        # Log resumido
+                        body_preview = ""
+                        if req_body:
+                            body_preview = f" | body: {req_body[:80]}"
+                        session.add_log(f"  🌐 {method} {status} {url[:80]}{body_preview}", "info")
+                        
+                    except Exception:
+                        pass
+                
+                page.on("response", on_response)
 
             # Navega para o checkout (ou produto -> carrinho -> checkout)
             session.add_log(f"Navegando: {session.payload.target_url}", "info")

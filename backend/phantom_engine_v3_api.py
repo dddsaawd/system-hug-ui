@@ -761,14 +761,14 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     return False
 
                 # 1. DADOS PESSOAIS — campo Nome visível e vazio
+                #    NUNCA preenche CEP aqui. CEP é sempre etapa separada.
                 if "dados_pessoais" not in etapas_completadas:
                     nome_sels = [
                         'input[name="name"]', 'input[name="nome"]', 'input[placeholder*="Nome"]',
                         'input[autocomplete="name"]',
                     ]
                     if await is_field_empty(nome_sels):
-                        cep_visible = await is_visible('input[name="cep"]') or await is_visible('input[placeholder*="CEP"]') or await is_visible('input[placeholder*="00000-000"]')
-                        return "dados_pessoais_com_cep" if cep_visible else "dados_pessoais"
+                        return "dados_pessoais"
 
                 # 2. CEP (tela separada)
                 if "cep" not in etapas_completadas:
@@ -881,8 +881,8 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     session.successes += 1
                     return True
 
-                # ──── DADOS PESSOAIS (com ou sem CEP junto) ────
-                if step in ("dados_pessoais", "dados_pessoais_com_cep"):
+                # ──── DADOS PESSOAIS (APENAS Nome, Email, Celular — SEM CEP) ────
+                if step == "dados_pessoais":
                     # Nome
                     nome_selectors = [
                         'input[name="name"]', 'input[name="nome"]', 'input#name',
@@ -919,18 +919,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     if not filled:
                         await smart_fill_field_by_label(page, ["Celular", "Telefone", "WhatsApp", "Celular/WhatsApp"], user_data["phone"], "Celular", session)
 
-                    # Se tem CEP nesta mesma tela, preenche tambem
-                    if step == "dados_pessoais_com_cep":
-                        cep_selectors = [
-                            'input[name="cep"]', 'input[name="zipcode"]', 'input#cep',
-                            'input[name="zip_code"]', 'input[placeholder*="CEP"]',
-                            'input[placeholder*="00000-000"]', 'input[placeholder*="00000000"]',
-                        ]
-                        filled = await smart_fill_field(page, cep_selectors, addr["cep"], "CEP", session)
-                        if not filled:
-                            await smart_fill_field_by_label(page, ["CEP"], addr["cep"], "CEP", session)
-                        session.add_log("  Aguardando auto-preenchimento do CEP...", "info")
-                        await asyncio.sleep(3.0)
+                    # NÃO preenche CEP aqui! CEP é SEMPRE etapa separada.
 
                     # Clica CONTINUAR
                     await asyncio.sleep(random.uniform(0.3, 0.6))
@@ -946,8 +935,6 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             continue
                     
                     etapas_completadas.add("dados_pessoais")
-                    if step == "dados_pessoais_com_cep":
-                        etapas_completadas.add("cep")
                     session.add_log("  Aguardando proxima etapa...", "info")
                     await asyncio.sleep(random.uniform(2.0, 3.5))
                     continue

@@ -146,7 +146,7 @@ export default function EngineControl() {
           <Monitor className="h-6 w-6 text-primary" /> Navegador Fantasma
         </h1>
         <p className="text-sm text-muted-foreground">
-          PHANTOM ENGINE v5.0 — Playwright Local + Checkout Adaptativo Universal
+          PHANTOM ENGINE v5.5 — DOM-Intelligence · Checkout Adaptativo Universal
         </p>
       </div>
 
@@ -168,7 +168,7 @@ export default function EngineControl() {
       {/* Fluxo de Automação */}
       <Card className="border-primary/20 bg-primary/5">
         <CardContent className="p-4">
-          <p className="text-xs font-semibold text-primary mb-2">FLUXO ADAPTATIVO v5.0 (UNIVERSAL)</p>
+          <p className="text-xs font-semibold text-primary mb-2">DOM-INTELLIGENCE v5.5 (UNIVERSAL)</p>
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             {isProductUrl && (
               <>

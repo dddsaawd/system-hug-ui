@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { MetricCard } from "@/components/MetricCard";
 import { FileUploadButton } from "@/components/FileUploadButton";
+import { DirectApiPanel } from "@/components/DirectApiPanel";
 import { toast } from "sonner";
 import {
   startEngine,
@@ -20,6 +21,7 @@ import {
   getEngineConfig,
   type StartEnginePayload,
   type EngineStatus,
+  type EngineMode,
 } from "@/lib/engine-api";
 
 export default function EngineControl() {

@@ -1194,6 +1194,52 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                         return True
                     continue
 
+                # ──── CONTINUAR GENERICO (botao visivel mas etapa nao identificada) ────
+                elif step == "continuar_generico":
+                    session.add_log("  Etapa nao identificada mas botao CONTINUAR visivel.", "info")
+                    # Tenta preencher campos vazios visiveis antes de clicar
+                    try:
+                        inputs = page.locator("input:visible")
+                        count = await inputs.count()
+                        for i in range(min(count, 10)):
+                            inp = inputs.nth(i)
+                            try:
+                                val = await inp.input_value()
+                                if val and len(val.strip()) > 1:
+                                    continue
+                                name = (await inp.get_attribute("name") or "").lower()
+                                ph = (await inp.get_attribute("placeholder") or "").lower()
+                                inp_type = (await inp.get_attribute("type") or "").lower()
+                                if inp_type in ("hidden", "checkbox", "radio", "submit"):
+                                    continue
+                                # Tenta adivinhar o que preencher
+                                if any(k in name + ph for k in ["numero", "number", "nº", "mero"]):
+                                    await inp.fill(addr["numero"])
+                                    session.add_log(f"  Auto-fill Numero: {addr['numero']}", "info")
+                                elif any(k in name + ph for k in ["complement", "complemento"]):
+                                    if addr["complemento"]:
+                                        await inp.fill(addr["complemento"])
+                                elif any(k in name + ph for k in ["cpf", "document", "000.000"]):
+                                    await inp.fill(cpf_digits)
+                                    session.add_log(f"  Auto-fill CPF", "info")
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    
+                    for text in ["CONTINUAR", "Continuar", "Continue", "Próximo"]:
+                        try:
+                            btn = page.get_by_role("button", name=text, exact=False).first
+                            if await btn.is_visible(timeout=500):
+                                await btn.scroll_into_view_if_needed()
+                                await btn.click(timeout=5000)
+                                session.add_log(f"  Botao '{text}' clicado!", "success")
+                                break
+                        except Exception:
+                            continue
+                    await asyncio.sleep(random.uniform(2.0, 3.5))
+                    continue
+
                 # ──── DESCONHECIDO ────
                 else:
                     session.add_log(f"  Etapa desconhecida. Tentando botao generico...", "info")

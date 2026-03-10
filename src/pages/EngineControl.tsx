@@ -107,6 +107,8 @@ export default function EngineControl() {
       rotate_after_successes: rotateAfter,
       is_product_url: isProductUrl,
       capture_network: captureNetwork,
+      engine_mode: engineMode,
+      ...(engineMode === "direct_api" && directApiConfig ? { direct_api_config: directApiConfig } : {}),
       ...(cpfs.length > 0 ? { cpfs } : {}),
     };
 

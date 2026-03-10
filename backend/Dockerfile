@@ -5,9 +5,12 @@ WORKDIR /app
 # Instala dependencias Python
 RUN pip install --no-cache-dir fastapi uvicorn pydantic playwright
 
-# Instala Chromium COMPLETO com todas as deps de sistema
-ENV PLAYWRIGHT_BROWSERS_PATH=0
-RUN playwright install --with-deps chromium
+# Instala Chromium COMPLETO (não headless_shell) com todas as deps de sistema
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN playwright install --with-deps chromium && \
+    echo "=== Playwright browsers ===" && \
+    find /ms-playwright -name "chrome" -o -name "chromium" -o -name "headless_shell" 2>/dev/null | head -20 && \
+    echo "=== Done ==="
 
 # Copia arquivos do backend
 COPY phantom_engine_v3_api.py .

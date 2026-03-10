@@ -732,13 +732,19 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                         return False
 
                 async def is_field_empty(selectors, timeout=400):
-                    """Retorna True se algum campo esta visivel E vazio."""
+                    """Retorna True se algum campo esta visivel E vazio (ou so tem mascara)."""
+                    mask_chars = set("0.-_()/ ")  # caracteres de mascara
                     for sel in selectors:
                         try:
                             el = page.locator(sel).first
                             if await el.is_visible(timeout=timeout):
                                 val = await el.input_value()
-                                if not val or len(val.strip()) < 2:
+                                # Vazio ou só tem caracteres de máscara (ex: "00000-000", "000.000.000-00")
+                                stripped = val.strip() if val else ""
+                                if not stripped or len(stripped) < 2:
+                                    return True
+                                # Se o valor é só máscara (zeros, pontos, traços)
+                                if all(c in mask_chars for c in stripped):
                                     return True
                         except Exception:
                             pass

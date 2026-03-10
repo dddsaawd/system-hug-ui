@@ -1265,12 +1265,8 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             continue
                     await asyncio.sleep(random.uniform(2.0, 3.5))
                     continue
-                                session.add_log(f"  Botao '{text}' clicado!", "success")
-                                break
-                        except Exception:
-                            continue
-                    await asyncio.sleep(random.uniform(2.0, 3.5))
-                    continue
+
+
 
                 # ──── DESCONHECIDO ────
                 else:

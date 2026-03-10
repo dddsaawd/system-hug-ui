@@ -100,6 +100,7 @@ export default function EngineControl() {
       interval_seconds: intervalSec,
       headless,
       rotate_after_successes: rotateAfter,
+      is_product_url: isProductUrl,
       ...(cpfs.length > 0 ? { cpfs } : {}),
     };
 

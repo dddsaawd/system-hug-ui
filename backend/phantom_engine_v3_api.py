@@ -553,90 +553,110 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
         except Exception:
             continue
 
-    # 3. ZEDY/CARDS: divs clicáveis com preço de frete (R$ X,XX) ou "dias úteis"
+    # 3. ZEDY/CARDS: divs clicáveis com preço de frete ou transportadora
     try:
         shipping_cards = await page.evaluate("""() => {
             const results = [];
-            // Busca elementos que contenham texto de frete (preço, prazo, transportadora)
             const allEls = document.querySelectorAll('div, label, li, span, button');
+            
+            // Palavras que indicam HEADER de etapa (NÃO é opção de frete)
+            const headerPatterns = [
+                /^\\d+\\s*entrega$/i, /preencha/i, /informações pessoais/i,
+                /para quem devemos/i, /devemos enviar/i, /dados pessoais/i,
+            ];
+            // Transportadoras conhecidas
+            const carriers = ['jadlog', 'correios', 'pac', 'sedex', 'azul cargo', 'total express', 'loggi'];
+            
             for (const el of allEls) {
                 const text = (el.textContent || '').trim();
                 const lower = text.toLowerCase();
-                // Deve ter indícios de opção de frete
+                if (text.length > 200 || text.length < 5) continue;
+                
+                // SKIP: headers de etapa
+                if (headerPatterns.some(p => p.test(text))) continue;
+                // SKIP: textos que são só endereço/campos (CEP, Número, Bairro)
+                if (/^CEP.*Número.*Bairro/i.test(text)) continue;
+                if (/Endereço\\/Rua.*Número.*Bairro/i.test(text)) continue;
+                
+                // Score de relevância
+                let score = 0;
+                const hasCarrier = carriers.some(c => lower.includes(c));
                 const hasPrice = /r\\$\\s*\\d/.test(lower) || lower.includes('grátis') || lower.includes('gratis') || lower.includes('free');
-                const hasShipping = lower.includes('frete') || lower.includes('envio') || lower.includes('entrega')
-                    || lower.includes('correios') || lower.includes('pac') || lower.includes('sedex')
-                    || lower.includes('jadlog') || lower.includes('transportadora')
-                    || /\\d+\\s*(dias?|úteis|uteis|horas?)/.test(lower);
-                if ((hasPrice && hasShipping) || (hasPrice && text.length < 120) || (hasShipping && text.length < 120)) {
-                    // Verifica se é clicável e visível
-                    const rect = el.getBoundingClientRect();
-                    if (rect.width > 50 && rect.height > 20 && rect.top > 0 && rect.top < window.innerHeight + 200) {
-                        // Não pode ser container gigante
-                        if (text.length < 200) {
-                            results.push({
-                                tag: el.tagName.toLowerCase(),
-                                text: text.substring(0, 100),
-                                top: rect.top,
-                                height: rect.height,
-                                width: rect.width,
-                                // Gera um seletor único
-                                xpath: (() => {
-                                    let path = '';
-                                    let node = el;
-                                    while (node && node.nodeType === 1) {
-                                        let idx = 0;
-                                        let sibling = node.previousSibling;
-                                        while (sibling) {
-                                            if (sibling.nodeType === 1 && sibling.tagName === node.tagName) idx++;
-                                            sibling = sibling.previousSibling;
-                                        }
-                                        path = '/' + node.tagName.toLowerCase() + '[' + (idx + 1) + ']' + path;
-                                        node = node.parentNode;
-                                    }
-                                    return path;
-                                })(),
-                            });
-                        }
-                    }
+                const hasFrete = lower.includes('frete') && !lower.includes('escolher frete');
+                const hasDias = /\\d+\\s*(dias?|úteis|uteis|horas?)/.test(lower);
+                const hasEnvio = lower.includes('envio via');
+                
+                if (hasCarrier) score += 50;
+                if (hasPrice) score += 30;
+                if (hasFrete) score += 20;
+                if (hasDias) score += 20;
+                if (hasEnvio) score += 40;
+                // "Escolha uma forma de entrega" + carrier = very high
+                if (lower.includes('forma de entrega') && hasCarrier) score += 30;
+                
+                if (score < 20) continue;
+                
+                const rect = el.getBoundingClientRect();
+                if (rect.width > 50 && rect.height > 20 && rect.top > 0 && rect.top < window.innerHeight + 300) {
+                    results.push({
+                        tag: el.tagName.toLowerCase(),
+                        text: text.substring(0, 100),
+                        top: rect.top,
+                        height: rect.height,
+                        width: rect.width,
+                        score: score,
+                    });
                 }
             }
-            // Ordena por posição vertical (top), pega a primeira opção visível
-            results.sort((a, b) => a.top - b.top);
+            // Ordena por SCORE (maior primeiro), depois por top
+            results.sort((a, b) => b.score - a.score || a.top - b.top);
             return results.slice(0, 5);
         }""")
 
         if shipping_cards:
             session.add_log(f"  📦 {len(shipping_cards)} opções de frete detectadas via cards", "info")
             for card in shipping_cards:
-                session.add_log(f"     → [{card['tag']}] {card['text'][:60]} (top:{int(card['top'])})", "info")
+                session.add_log(f"     → [{card['tag']}] score:{card['score']} {card['text'][:55]} (top:{int(card['top'])})", "info")
 
-            # Clica na primeira opção de frete
-            first = shipping_cards[0]
+            # Clica na opção com maior score
+            best = shipping_cards[0]
+            session.add_log(f"  🎯 Selecionando frete com score {best['score']}: {best['text'][:50]}", "info")
+            
+            # Estratégia 1: Tenta clicar via texto parcial único
+            clicked = False
             try:
-                # Tenta clicar via getByText com texto parcial
-                card_text = first['text'][:40].strip()
-                el = page.get_by_text(card_text, exact=False).first
+                # Usa um trecho único do texto (carrier name ou preço)
+                card_text = best['text']
+                # Extrai o trecho mais específico: transportadora ou "Frete Grátis"
+                import re as _re
+                carrier_match = _re.search(r'(JADLOG|Correios|PAC|SEDEX|Frete Gr[áa]tis)', card_text, _re.IGNORECASE)
+                click_text = carrier_match.group(0) if carrier_match else card_text[:40].strip()
+                
+                el = page.get_by_text(click_text, exact=False).first
                 if await el.is_visible(timeout=2000):
                     await el.scroll_into_view_if_needed()
                     await asyncio.sleep(random.uniform(0.2, 0.4))
                     await el.click()
-                    session.add_log(f"  ✅ Frete card clicado: {first['text'][:50]}", "success")
+                    session.add_log(f"  ✅ Frete card clicado: {click_text}", "success")
                     await asyncio.sleep(random.uniform(0.5, 1.0))
-                    return True
+                    clicked = True
             except Exception:
                 pass
 
-            # Fallback: clica via coordenadas
-            try:
-                x = first.get('width', 200) / 2
-                y = first['top'] + first.get('height', 40) / 2
-                await page.mouse.click(x + 20, y)
-                session.add_log(f"  ✅ Frete card clicado via coordenadas: {first['text'][:50]}", "success")
-                await asyncio.sleep(random.uniform(0.5, 1.0))
+            if not clicked:
+                # Estratégia 2: clica via coordenadas
+                try:
+                    x = best.get('width', 200) / 2
+                    y = best['top'] + best.get('height', 40) / 2
+                    await page.mouse.click(x + 20, y)
+                    session.add_log(f"  ✅ Frete card clicado via coordenadas: {best['text'][:50]}", "success")
+                    await asyncio.sleep(random.uniform(0.5, 1.0))
+                    clicked = True
+                except Exception as e:
+                    session.add_log(f"  ❌ Erro clicando frete card: {str(e)[:40]}", "error")
+            
+            if clicked:
                 return True
-            except Exception as e:
-                session.add_log(f"  ❌ Erro clicando frete card: {str(e)[:40]}", "error")
     except Exception as e:
         session.add_log(f"  Erro detectando shipping cards: {str(e)[:40]}", "error")
 

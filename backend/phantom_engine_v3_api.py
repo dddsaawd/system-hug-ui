@@ -513,7 +513,7 @@ async def select_pix_payment(page, session: EngineSession) -> bool:
 
 async def select_shipping_option(page, session: EngineSession) -> bool:
     """Tenta selecionar uma opcao de frete (primeira disponivel)."""
-    # Primeiro tenta radios de shipping (mais confiável)
+    # 1. Radios de shipping tradicionais
     radio_selectors = [
         'input[name="shipping"]', 'input[name="frete"]',
         'input[name="shipping_method"]', 'input[name="delivery"]',
@@ -532,20 +532,18 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
         except Exception:
             continue
 
-    # Labels com texto específico de frete (evita sidebar)
+    # 2. Labels com texto específico de frete
     frete_labels = [
         'label:has-text("JADLOG")', 'label:has-text("Correios")',
         'label:has-text("PAC")', 'label:has-text("SEDEX")',
         'label:has-text("Frete Grátis")', 'label:has-text("Frete grátis")',
-        'label:has-text("Frete Gratis")',
-        'label:has-text("Envio")',
+        'label:has-text("Frete Gratis")', 'label:has-text("Envio")',
     ]
     for sel in frete_labels:
         try:
             el = page.locator(sel).first
             if await el.is_visible(timeout=1000):
                 text = (await el.text_content() or "")[:50]
-                # Evita clicar em elementos da sidebar (texto longo com "PAGAMENTO" etc)
                 if "pagamento" in text.lower() or "seguro" in text.lower():
                     continue
                 await el.click()
@@ -554,7 +552,95 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
                 return True
         except Exception:
             continue
-    
+
+    # 3. ZEDY/CARDS: divs clicáveis com preço de frete (R$ X,XX) ou "dias úteis"
+    try:
+        shipping_cards = await page.evaluate("""() => {
+            const results = [];
+            // Busca elementos que contenham texto de frete (preço, prazo, transportadora)
+            const allEls = document.querySelectorAll('div, label, li, span, button');
+            for (const el of allEls) {
+                const text = (el.textContent || '').trim();
+                const lower = text.toLowerCase();
+                // Deve ter indícios de opção de frete
+                const hasPrice = /r\\$\\s*\\d/.test(lower) || lower.includes('grátis') || lower.includes('gratis') || lower.includes('free');
+                const hasShipping = lower.includes('frete') || lower.includes('envio') || lower.includes('entrega')
+                    || lower.includes('correios') || lower.includes('pac') || lower.includes('sedex')
+                    || lower.includes('jadlog') || lower.includes('transportadora')
+                    || /\\d+\\s*(dias?|úteis|uteis|horas?)/.test(lower);
+                if ((hasPrice && hasShipping) || (hasPrice && text.length < 120) || (hasShipping && text.length < 120)) {
+                    // Verifica se é clicável e visível
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width > 50 && rect.height > 20 && rect.top > 0 && rect.top < window.innerHeight + 200) {
+                        // Não pode ser container gigante
+                        if (text.length < 200) {
+                            results.push({
+                                tag: el.tagName.toLowerCase(),
+                                text: text.substring(0, 100),
+                                top: rect.top,
+                                height: rect.height,
+                                width: rect.width,
+                                // Gera um seletor único
+                                xpath: (() => {
+                                    let path = '';
+                                    let node = el;
+                                    while (node && node.nodeType === 1) {
+                                        let idx = 0;
+                                        let sibling = node.previousSibling;
+                                        while (sibling) {
+                                            if (sibling.nodeType === 1 && sibling.tagName === node.tagName) idx++;
+                                            sibling = sibling.previousSibling;
+                                        }
+                                        path = '/' + node.tagName.toLowerCase() + '[' + (idx + 1) + ']' + path;
+                                        node = node.parentNode;
+                                    }
+                                    return path;
+                                })(),
+                            });
+                        }
+                    }
+                }
+            }
+            // Ordena por posição vertical (top), pega a primeira opção visível
+            results.sort((a, b) => a.top - b.top);
+            return results.slice(0, 5);
+        }""")
+
+        if shipping_cards:
+            session.add_log(f"  📦 {len(shipping_cards)} opções de frete detectadas via cards", "info")
+            for card in shipping_cards:
+                session.add_log(f"     → [{card['tag']}] {card['text'][:60]} (top:{int(card['top'])})", "info")
+
+            # Clica na primeira opção de frete
+            first = shipping_cards[0]
+            try:
+                # Tenta clicar via getByText com texto parcial
+                card_text = first['text'][:40].strip()
+                el = page.get_by_text(card_text, exact=False).first
+                if await el.is_visible(timeout=2000):
+                    await el.scroll_into_view_if_needed()
+                    await asyncio.sleep(random.uniform(0.2, 0.4))
+                    await el.click()
+                    session.add_log(f"  ✅ Frete card clicado: {first['text'][:50]}", "success")
+                    await asyncio.sleep(random.uniform(0.5, 1.0))
+                    return True
+            except Exception:
+                pass
+
+            # Fallback: clica via coordenadas
+            try:
+                x = first.get('width', 200) / 2
+                y = first['top'] + first.get('height', 40) / 2
+                await page.mouse.click(x + 20, y)
+                session.add_log(f"  ✅ Frete card clicado via coordenadas: {first['text'][:50]}", "success")
+                await asyncio.sleep(random.uniform(0.5, 1.0))
+                return True
+            except Exception as e:
+                session.add_log(f"  ❌ Erro clicando frete card: {str(e)[:40]}", "error")
+    except Exception as e:
+        session.add_log(f"  Erro detectando shipping cards: {str(e)[:40]}", "error")
+
+    session.add_log("  ⚠️ Nenhuma opção de frete encontrada", "info")
     return False
 
 
@@ -586,27 +672,30 @@ async def select_state_dropdown(page, estado: str, session: EngineSession) -> bo
 
 async def check_success(page, session: EngineSession) -> bool:
     """Verifica se a venda foi gerada com sucesso."""
-    # Primeiro tenta via seletores visuais
+    # PRIMEIRO: verifica se a URL mudou para página de sucesso/pagamento
+    current_url = page.url.lower()
+    if any(k in current_url for k in ['/order/', '/obrigado', '/thankyou', '/thank-you', '/success', '/payment/', '/pix']):
+        session.add_log(f"VENDA GERADA! URL de sucesso: {page.url[:80]}", "success")
+        return True
+
+    # Seletores visuais — só valida se for ESPECÍFICO de sucesso (não genérico)
     sucesso_selectors = [
         'text="Pedido realizado"', 'text="pedido realizado"',
         'text="Compra realizada"', 'text="compra realizada"',
         'text="Pagamento gerado"', 'text="pagamento gerado"',
         'text="PIX gerado"', 'text="Pix gerado"', 'text="pix gerado"',
-        'text="QR Code"', 'text="qr code"', 'text="QR code"',
         'text="Copia e Cola"', 'text="copia e cola"',
         'text="Copiar codigo"', 'text="Copiar código"',
         'text="Copie o código"', 'text="copie o código"',
         'text="Aguardando pagamento"', 'text="aguardando pagamento"',
-        'text="Obrigado"', 'text="obrigado"',
         'text="Parabéns"', 'text="parabens"',
-        'text="sucesso"', 'text="Sucesso"',
         'text="Boleto gerado"', 'text="boleto gerado"',
         'text="Pedido confirmado"', 'text="pedido confirmado"',
         'text="Pedido criado"', 'text="pedido criado"',
         'text="Pague com Pix"', 'text="pague com pix"',
         'text="Escaneie o QR"', 'text="escaneie o qr"',
         'img[alt*="qr"]', 'img[alt*="QR"]',
-        'canvas', '[class*="qr"]', '[class*="pix-code"]',
+        '[class*="pix-code"]',
     ]
     for sel in sucesso_selectors:
         try:
@@ -617,23 +706,33 @@ async def check_success(page, session: EngineSession) -> bool:
         except Exception:
             continue
 
-    # Fallback: verifica texto da pagina
+    # Fallback: verifica texto + contexto (precisa ter múltiplos indicadores)
     try:
         page_text = await page.text_content("body")
         if page_text:
             lower = page_text.lower()
-            indicadores = [
-                "pix gerado", "qr code", "aguardando pagamento",
-                "pedido realizado", "compra realizada", "obrigado",
-                "copia e cola", "copiar codigo", "copiar código",
+            # Indicadores FORTES (1 basta)
+            strong = [
+                "pix gerado", "aguardando pagamento", "pedido realizado",
+                "compra realizada", "copia e cola", "copiar codigo", "copiar código",
                 "boleto gerado", "pedido confirmado", "pedido criado",
                 "pague com pix", "escaneie o qr", "copie o código",
                 "pagamento via pix", "código pix",
             ]
-            for ind in indicadores:
+            for ind in strong:
                 if ind in lower:
                     session.add_log(f"VENDA GERADA! Texto detectado: '{ind}'", "success")
                     return True
+
+            # "qr code" e "obrigado" são FRACOS — precisam de contexto extra
+            weak_indicators = ["qr code", "obrigado", "sucesso"]
+            confirm_context = ["copiar", "copia", "pagar", "escaneie", "prazo", "pedido", "pagamento confirmado"]
+            for ind in weak_indicators:
+                if ind in lower:
+                    # Só conta se tiver contexto de pagamento concluído
+                    if any(ctx in lower for ctx in confirm_context):
+                        session.add_log(f"VENDA GERADA! Texto: '{ind}' + contexto confirmado", "success")
+                        return True
     except Exception:
         pass
 

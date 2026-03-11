@@ -1437,16 +1437,22 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                         await el.fill(value)
                         await asyncio.sleep(random.uniform(0.1, 0.25))
                         
-                        # CRÍTICO: Dispara blur/input/change para React/Next.js atualizar estado
+                        # CRÍTICO: Usa React native setter para forçar atualização de estado
+                        # O Playwright .fill() nem sempre dispara onChange em inputs controlados do React
                         try:
-                            await page.evaluate(f"""(idx) => {{
-                                const el = document.querySelector('[data-phantom-idx="' + idx + '"]');
+                            await page.evaluate(f"""(data) => {{
+                                const el = document.querySelector('[data-phantom-idx="' + data.idx + '"]');
                                 if (el) {{
+                                    // Trick: usa Object.getOwnPropertyDescriptor para acessar o setter nativo do HTMLInputElement
+                                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                                        window.HTMLInputElement.prototype, 'value'
+                                    ).set;
+                                    nativeInputValueSetter.call(el, data.value);
                                     el.dispatchEvent(new Event('input', {{ bubbles: true }}));
                                     el.dispatchEvent(new Event('change', {{ bubbles: true }}));
                                     el.dispatchEvent(new Event('blur', {{ bubbles: true }}));
                                 }}
-                            }}""", field_info["idx"])
+                            }}""", {"idx": field_info["idx"], "value": value})
                         except Exception:
                             pass
 
@@ -1459,13 +1465,35 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                         # Delay pós-preenchimento (CEP → auto-complete)
                         if field_type in POST_FILL_DELAY:
                             session.add_log(f"  Aguardando auto-preenchimento ({label})...", "info")
-                            # Tab out do campo CEP para disparar lookup
+                            # Tab out para disparar lookup + blur
                             try:
                                 await page.keyboard.press("Tab")
+                                await asyncio.sleep(0.3)
+                                # Clica fora do campo para garantir blur
+                                await page.click("body", position={"x": 10, "y": 10})
                                 await asyncio.sleep(0.5)
                             except Exception:
                                 pass
                             await asyncio.sleep(POST_FILL_DELAY[field_type])
+                            
+                            # Após o delay, re-checa se o CEP disparou busca via XHR
+                            # Se não expandiu, tenta preencher via teclado como fallback
+                            try:
+                                new_fields = await page.evaluate(EXTRACT_FIELDS_JS)
+                                addr_found = sum(1 for f in (new_fields or []) if classify_field(f)[0] in ('rua', 'bairro', 'cidade'))
+                                if addr_found < 2:
+                                    session.add_log("  ⚠️ CEP não expandiu — tentando via teclado...", "info")
+                                    await el.click()
+                                    await el.press("Control+a")
+                                    await asyncio.sleep(0.1)
+                                    # Digita caractere por caractere para simular digitação real
+                                    for char in value:
+                                        await page.keyboard.type(char, delay=50)
+                                    await asyncio.sleep(0.3)
+                                    await page.keyboard.press("Tab")
+                                    await asyncio.sleep(5.0)
+                            except Exception:
+                                pass
 
                     except Exception as e:
                         session.add_log(f"  Erro {FIELD_LABELS.get(field_type, field_type)}: {str(e)[:40]}", "error")

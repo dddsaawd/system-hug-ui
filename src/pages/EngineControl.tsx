@@ -410,6 +410,7 @@ export default function EngineControl() {
             onEngineModeChange={setEngineMode}
             onDirectConfigChange={setDirectApiConfig}
             disabled={isRunning}
+            cpfsList={cpfsText.split("\n").map(c => c.trim()).filter(Boolean)}
           />
 
         <Card className="border-border/50">

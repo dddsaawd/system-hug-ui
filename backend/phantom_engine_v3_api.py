@@ -1371,11 +1371,14 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 return ('unknown', 0)
 
             # ─── Dados para cada tipo de campo ───
+            # CRÍTICO: CPF com máscara 000.000.000-00 (exigido pelo gateway Zedy)
+            cpf_masked = f"{cpf_digits[:3]}.{cpf_digits[3:6]}.{cpf_digits[6:9]}-{cpf_digits[9:11]}" if len(cpf_digits) == 11 else cpf_digits
+            
             FIELD_VALUES = {
                 'name': user_data["name"],
                 'email': user_data["email"],
                 'phone': user_data["phone"],
-                'cpf': cpf_digits,
+                'cpf': cpf_masked,
                 'cep': addr["cep"],
                 'numero': addr["numero"],
                 'complemento': addr.get("complemento", ""),

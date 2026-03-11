@@ -602,7 +602,7 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
                 // "Escolha uma forma de entrega" + carrier = very high
                 if (lower.includes('forma de entrega') && hasCarrier) score += 30;
                 
-                if (score < 20) continue;
+                if (score < 30) continue;
                 
                 const rect = el.getBoundingClientRect();
                 if (rect.width > 50 && rect.height > 20 && rect.top > 0 && rect.top < window.innerHeight + 300) {

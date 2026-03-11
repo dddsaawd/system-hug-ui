@@ -1851,6 +1851,9 @@ async def resolve_zedy_token_from_html(checkout_url: str, proxy: str = "") -> di
             result["shipping"] = {
                 "requiresZipcode": bool(checkout.get("isZipcode")),
             }
+            # CRÍTICO: Extrair action IDs ANTES de retornar (sem eles, server actions falham)
+            action_ids = re.findall(r'"([a-f0-9]{40})"', html)
+            result["actionIds"] = list(dict.fromkeys(action_ids))[:10]  # dedup preservando ordem
             return result
         except Exception:
             pass

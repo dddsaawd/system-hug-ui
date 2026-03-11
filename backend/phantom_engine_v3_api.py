@@ -602,7 +602,7 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
                 // "Escolha uma forma de entrega" + carrier = very high
                 if (lower.includes('forma de entrega') && hasCarrier) score += 30;
                 
-                if (score < 20) continue;
+                if (score < 30) continue;
                 
                 const rect = el.getBoundingClientRect();
                 if (rect.width > 50 && rect.height > 20 && rect.top > 0 && rect.top < window.innerHeight + 300) {
@@ -700,11 +700,13 @@ async def select_state_dropdown(page, estado: str, session: EngineSession) -> bo
 
 async def check_success(page, session: EngineSession) -> bool:
     """Verifica se a venda foi gerada com sucesso."""
-    # GUARD: Se ainda há campo de CPF/document visível e vazio, NÃO é sucesso
+    # GUARD RIGOROSO: Se QUALQUER campo de CPF/document existe e não foi preenchido, NÃO é sucesso
     try:
         has_unfilled_cpf = await page.evaluate("""() => {
-            const selectors = ['#document', 'input[name="document"]', 'input[name="cpf"]', '#cpf'];
-            for (const sel of selectors) {
+            // Busca por seletores diretos
+            const directSelectors = ['#document', 'input[name="document"]', 'input[name="cpf"]', '#cpf',
+                                      'input[id*="document"]', 'input[id*="cpf"]', 'input[name*="cpf"]'];
+            for (const sel of directSelectors) {
                 const el = document.querySelector(sel);
                 if (el) {
                     const rect = el.getBoundingClientRect();
@@ -714,9 +716,33 @@ async def check_success(page, session: EngineSession) -> bool:
                     }
                 }
             }
+            // Busca por label "CPF" associado a input
+            const labels = document.querySelectorAll('label');
+            for (const label of labels) {
+                const text = (label.textContent || '').trim().toLowerCase();
+                if (text === 'cpf' || text.includes('cpf')) {
+                    const forId = label.getAttribute('for');
+                    let input = null;
+                    if (forId) input = document.getElementById(forId);
+                    if (!input) input = label.querySelector('input');
+                    if (!input) {
+                        // Busca input irmão
+                        const parent = label.parentElement;
+                        if (parent) input = parent.querySelector('input');
+                    }
+                    if (input) {
+                        const rect = input.getBoundingClientRect();
+                        const val = (input.value || '').replace(/[^0-9]/g, '');
+                        if (rect.width > 0 && rect.height > 0 && val.length < 11) {
+                            return true;
+                        }
+                    }
+                }
+            }
             return false;
         }""")
         if has_unfilled_cpf:
+            session.add_log("  ⛔ CPF não preenchido — bloqueando falso sucesso", "info")
             return False
     except Exception:
         pass
@@ -1371,11 +1397,14 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 return ('unknown', 0)
 
             # ─── Dados para cada tipo de campo ───
+            # CRÍTICO: CPF com máscara 000.000.000-00 (exigido pelo gateway Zedy)
+            cpf_masked = f"{cpf_digits[:3]}.{cpf_digits[3:6]}.{cpf_digits[6:9]}-{cpf_digits[9:11]}" if len(cpf_digits) == 11 else cpf_digits
+            
             FIELD_VALUES = {
                 'name': user_data["name"],
                 'email': user_data["email"],
                 'phone': user_data["phone"],
-                'cpf': cpf_digits,
+                'cpf': cpf_masked,
                 'cep': addr["cep"],
                 'numero': addr["numero"],
                 'complemento': addr.get("complemento", ""),
@@ -1945,13 +1974,9 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             consecutive_same_fields = 0
                             last_field_set = set()
                             # Espera extra para campos React/RSC renderizarem
-                            await asyncio.sleep(random.uniform(1.0, 2.0))
-                            # Verificar sucesso imediato pós-transição
-                            if await check_success(page, session):
-                                session.add_log("VENDA GERADA com sucesso!", "success")
-                                session.successes += 1
-                                return True
-                            # Continua para próximo scan imediatamente
+                            await asyncio.sleep(random.uniform(1.5, 2.5))
+                            # NÃO verificar sucesso aqui — precisa preencher CPF na etapa de pagamento primeiro
+                            # O check_success roda no INÍCIO do próximo loop, após scan+fill
                             continue
                         else:
                             # Não houve transição — pode ser validação falhando

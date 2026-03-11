@@ -2181,11 +2181,14 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
             session.add_log(f"📤 Finalizando pedido com {payment_method.upper()}...", "info")
             session.add_log(f"   Gateway: {'Prime Cash' if payment_method == 'pix' else 'Pagou.ai'}", "info")
             
+            # Formata CPF com máscara (000.000.000-00) como esperado pelo checkout
+            cpf_masked = f"{cpf_digits[:3]}.{cpf_digits[3:6]}.{cpf_digits[6:9]}-{cpf_digits[9:11]}" if len(cpf_digits) == 11 else cpf_digits
+            
             payment_payload = json.dumps([
                 store_id, checkout_id,
                 {
                     "paymentMethod": payment_method,
-                    "cpf": cpf_digits,
+                    "cpf": cpf_masked,
                 }
             ])
             

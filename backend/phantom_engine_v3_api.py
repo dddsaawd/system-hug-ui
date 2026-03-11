@@ -578,9 +578,17 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
                 if (/^CEP.*Número.*Bairro/i.test(text)) continue;
                 if (/Endereço\\/Rua.*Número.*Bairro/i.test(text)) continue;
                 
+                // SKIP: product cards (contém "Quantidade" ou seletor de qty)
+                if (/quantidade/i.test(text)) continue;
+                if (el.querySelector && el.querySelector('select[name*="quantity"]')) continue;
+                // SKIP: textos que parecem produto (nome + preço sem carrier/frete/envio)
+                const looksLikeProduct = /r\$\s*\d/.test(lower) && !lower.includes('frete') && !lower.includes('envio') && !lower.includes('entrega');
+                const hasAnyCarrier = ['jadlog', 'correios', 'pac', 'sedex', 'azul cargo', 'total express', 'loggi'].some(c => lower.includes(c));
+                if (looksLikeProduct && !hasAnyCarrier) continue;
+
                 // Score de relevância
                 let score = 0;
-                const hasCarrier = carriers.some(c => lower.includes(c));
+                const hasCarrier = hasAnyCarrier;
                 const hasPrice = /r\\$\\s*\\d/.test(lower) || lower.includes('grátis') || lower.includes('gratis') || lower.includes('free');
                 const hasFrete = lower.includes('frete') && !lower.includes('escolher frete');
                 const hasDias = /\\d+\\s*(dias?|úteis|uteis|horas?)/.test(lower);
@@ -692,6 +700,27 @@ async def select_state_dropdown(page, estado: str, session: EngineSession) -> bo
 
 async def check_success(page, session: EngineSession) -> bool:
     """Verifica se a venda foi gerada com sucesso."""
+    # GUARD: Se ainda há campo de CPF/document visível e vazio, NÃO é sucesso
+    try:
+        has_unfilled_cpf = await page.evaluate("""() => {
+            const selectors = ['#document', 'input[name="document"]', 'input[name="cpf"]', '#cpf'];
+            for (const sel of selectors) {
+                const el = document.querySelector(sel);
+                if (el) {
+                    const rect = el.getBoundingClientRect();
+                    const val = (el.value || '').replace(/[^0-9]/g, '');
+                    if (rect.width > 0 && rect.height > 0 && val.length < 11) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }""")
+        if has_unfilled_cpf:
+            return False
+    except Exception:
+        pass
+
     # PRIMEIRO: verifica se a URL mudou para página de sucesso/pagamento
     current_url = page.url.lower()
     if any(k in current_url for k in ['/order/', '/obrigado', '/thankyou', '/thank-you', '/success', '/payment/', '/pix']):

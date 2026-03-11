@@ -2117,8 +2117,8 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
             
             await asyncio.sleep(random.uniform(0.5, 1.5))
             
-            # ═══ PASSO 3: Server Action — CEP + endereço + CPF ═══
-            # Payload capturado: [storeId, checkoutId, {zipcode, address, number, complement, neighborhood, city, state, cpf}]
+            # ═══ PASSO 3: Server Action — CEP + endereço (SEM CPF — CPF vai no pagamento) ═══
+            # Confirmado via screenshots: CPF aparece na etapa 3 "Opção de pagamento", não na etapa 2 "Entrega"
             if resolved["shipping"].get("requiresZipcode") or config.zipcode or True:  # sempre enviar
                 session.add_log("📤 Enviando CEP e endereço...", "info")
                 zipcode = config.zipcode or addr["cep"]
@@ -2133,7 +2133,6 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
                         "neighborhood": addr["bairro"],
                         "city": addr["cidade"],
                         "state": addr["estado"],
-                        "cpf": cpf_digits,
                     }
                 ])
                 

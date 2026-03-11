@@ -1403,6 +1403,19 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                         await asyncio.sleep(random.uniform(0.03, 0.08))
                         await el.fill(value)
                         await asyncio.sleep(random.uniform(0.1, 0.25))
+                        
+                        # CRÍTICO: Dispara blur/input/change para React/Next.js atualizar estado
+                        try:
+                            await page.evaluate(f"""(idx) => {{
+                                const el = document.querySelector('[data-phantom-idx="' + idx + '"]');
+                                if (el) {{
+                                    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                    el.dispatchEvent(new Event('blur', {{ bubbles: true }}));
+                                }}
+                            }}""", field_info["idx"])
+                        except Exception:
+                            pass
 
                         label = FIELD_LABELS.get(field_type, field_type)
                         display = value[:25] + ("..." if len(value) > 25 else "")
@@ -1413,6 +1426,12 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                         # Delay pós-preenchimento (CEP → auto-complete)
                         if field_type in POST_FILL_DELAY:
                             session.add_log(f"  Aguardando auto-preenchimento ({label})...", "info")
+                            # Tab out do campo CEP para disparar lookup
+                            try:
+                                await page.keyboard.press("Tab")
+                                await asyncio.sleep(0.5)
+                            except Exception:
+                                pass
                             await asyncio.sleep(POST_FILL_DELAY[field_type])
 
                     except Exception as e:

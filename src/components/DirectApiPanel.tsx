@@ -29,6 +29,7 @@ interface DirectApiPanelProps {
     zipcode?: string;
   }) => void;
   disabled?: boolean;
+  cpfsList?: string[];
 }
 
 export function DirectApiPanel({

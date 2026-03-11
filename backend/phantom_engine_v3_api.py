@@ -513,7 +513,7 @@ async def select_pix_payment(page, session: EngineSession) -> bool:
 
 async def select_shipping_option(page, session: EngineSession) -> bool:
     """Tenta selecionar uma opcao de frete (primeira disponivel)."""
-    # Primeiro tenta radios de shipping (mais confiável)
+    # 1. Radios de shipping tradicionais
     radio_selectors = [
         'input[name="shipping"]', 'input[name="frete"]',
         'input[name="shipping_method"]', 'input[name="delivery"]',
@@ -532,20 +532,18 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
         except Exception:
             continue
 
-    # Labels com texto específico de frete (evita sidebar)
+    # 2. Labels com texto específico de frete
     frete_labels = [
         'label:has-text("JADLOG")', 'label:has-text("Correios")',
         'label:has-text("PAC")', 'label:has-text("SEDEX")',
         'label:has-text("Frete Grátis")', 'label:has-text("Frete grátis")',
-        'label:has-text("Frete Gratis")',
-        'label:has-text("Envio")',
+        'label:has-text("Frete Gratis")', 'label:has-text("Envio")',
     ]
     for sel in frete_labels:
         try:
             el = page.locator(sel).first
             if await el.is_visible(timeout=1000):
                 text = (await el.text_content() or "")[:50]
-                # Evita clicar em elementos da sidebar (texto longo com "PAGAMENTO" etc)
                 if "pagamento" in text.lower() or "seguro" in text.lower():
                     continue
                 await el.click()
@@ -554,7 +552,95 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
                 return True
         except Exception:
             continue
-    
+
+    # 3. ZEDY/CARDS: divs clicáveis com preço de frete (R$ X,XX) ou "dias úteis"
+    try:
+        shipping_cards = await page.evaluate("""() => {
+            const results = [];
+            // Busca elementos que contenham texto de frete (preço, prazo, transportadora)
+            const allEls = document.querySelectorAll('div, label, li, span, button');
+            for (const el of allEls) {
+                const text = (el.textContent || '').trim();
+                const lower = text.toLowerCase();
+                // Deve ter indícios de opção de frete
+                const hasPrice = /r\\$\\s*\\d/.test(lower) || lower.includes('grátis') || lower.includes('gratis') || lower.includes('free');
+                const hasShipping = lower.includes('frete') || lower.includes('envio') || lower.includes('entrega')
+                    || lower.includes('correios') || lower.includes('pac') || lower.includes('sedex')
+                    || lower.includes('jadlog') || lower.includes('transportadora')
+                    || /\\d+\\s*(dias?|úteis|uteis|horas?)/.test(lower);
+                if ((hasPrice && hasShipping) || (hasPrice && text.length < 120) || (hasShipping && text.length < 120)) {
+                    // Verifica se é clicável e visível
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width > 50 && rect.height > 20 && rect.top > 0 && rect.top < window.innerHeight + 200) {
+                        // Não pode ser container gigante
+                        if (text.length < 200) {
+                            results.push({
+                                tag: el.tagName.toLowerCase(),
+                                text: text.substring(0, 100),
+                                top: rect.top,
+                                height: rect.height,
+                                width: rect.width,
+                                // Gera um seletor único
+                                xpath: (() => {
+                                    let path = '';
+                                    let node = el;
+                                    while (node && node.nodeType === 1) {
+                                        let idx = 0;
+                                        let sibling = node.previousSibling;
+                                        while (sibling) {
+                                            if (sibling.nodeType === 1 && sibling.tagName === node.tagName) idx++;
+                                            sibling = sibling.previousSibling;
+                                        }
+                                        path = '/' + node.tagName.toLowerCase() + '[' + (idx + 1) + ']' + path;
+                                        node = node.parentNode;
+                                    }
+                                    return path;
+                                })(),
+                            });
+                        }
+                    }
+                }
+            }
+            // Ordena por posição vertical (top), pega a primeira opção visível
+            results.sort((a, b) => a.top - b.top);
+            return results.slice(0, 5);
+        }""")
+
+        if shipping_cards:
+            session.add_log(f"  📦 {len(shipping_cards)} opções de frete detectadas via cards", "info")
+            for card in shipping_cards:
+                session.add_log(f"     → [{card['tag']}] {card['text'][:60]} (top:{int(card['top'])})", "info")
+
+            # Clica na primeira opção de frete
+            first = shipping_cards[0]
+            try:
+                # Tenta clicar via getByText com texto parcial
+                card_text = first['text'][:40].strip()
+                el = page.get_by_text(card_text, exact=False).first
+                if await el.is_visible(timeout=2000):
+                    await el.scroll_into_view_if_needed()
+                    await asyncio.sleep(random.uniform(0.2, 0.4))
+                    await el.click()
+                    session.add_log(f"  ✅ Frete card clicado: {first['text'][:50]}", "success")
+                    await asyncio.sleep(random.uniform(0.5, 1.0))
+                    return True
+            except Exception:
+                pass
+
+            # Fallback: clica via coordenadas
+            try:
+                x = first.get('width', 200) / 2
+                y = first['top'] + first.get('height', 40) / 2
+                await page.mouse.click(x + 20, y)
+                session.add_log(f"  ✅ Frete card clicado via coordenadas: {first['text'][:50]}", "success")
+                await asyncio.sleep(random.uniform(0.5, 1.0))
+                return True
+            except Exception as e:
+                session.add_log(f"  ❌ Erro clicando frete card: {str(e)[:40]}", "error")
+    except Exception as e:
+        session.add_log(f"  Erro detectando shipping cards: {str(e)[:40]}", "error")
+
+    session.add_log("  ⚠️ Nenhuma opção de frete encontrada", "info")
     return False
 
 

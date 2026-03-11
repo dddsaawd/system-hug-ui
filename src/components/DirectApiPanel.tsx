@@ -29,6 +29,7 @@ interface DirectApiPanelProps {
     zipcode?: string;
   }) => void;
   disabled?: boolean;
+  cpfsList?: string[];
 }
 
 export function DirectApiPanel({
@@ -37,6 +38,7 @@ export function DirectApiPanel({
   onEngineModeChange,
   onDirectConfigChange,
   disabled,
+  cpfsList = [],
 }: DirectApiPanelProps) {
   const [paymentMethod, setPaymentMethod] = useState<"pix" | "credit_card" | "boleto">("pix");
   const [zipcode, setZipcode] = useState("79180000");
@@ -50,6 +52,8 @@ export function DirectApiPanel({
   const isDirectReady = isZedy && !!token;
 
   const previewData = generateRandomOrderData();
+  const hasCpfs = cpfsList.length > 0;
+  const previewCpf = hasCpfs ? cpfsList[0] : null;
 
   const handleModeSwitch = (mode: EngineMode) => {
     onEngineModeChange(mode);
@@ -226,8 +230,15 @@ export function DirectApiPanel({
                   <span className="text-muted-foreground">👤 {previewData.name}</span>
                   <span className="text-muted-foreground">📧 {previewData.email}</span>
                   <span className="text-muted-foreground">📱 {previewData.phone}</span>
-                  <span className="text-muted-foreground">🆔 {previewData.cpf}</span>
+                  <span className={hasCpfs ? "text-primary font-semibold" : "text-destructive"}>
+                    🆔 {hasCpfs ? `${previewCpf} (da lista)` : "⚠️ Carregue CPFs!"}
+                  </span>
                 </div>
+                {!hasCpfs && (
+                  <p className="text-[10px] text-destructive mt-1.5 font-medium">
+                    ⚠️ CPF aleatório NÃO gera PIX. Carregue CPFs válidos acima.
+                  </p>
+                )}
               </CardContent>
             </Card>
 

@@ -340,14 +340,17 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
         except Exception:
             continue
 
-    # ─── Estrategia 2: CSS selector button/a com has-text ───
+    # ─── Estrategia 2: CSS selector button/a/div/span com has-text ───
     for text in button_texts:
-        for tag in ["button", "a"]:
+        for tag in ["button", "a", "div[role='button']", "span[role='button']", "div", "span"]:
             try:
                 el = page.locator(f'{tag}:has-text("{text}")').first
                 if await el.is_visible(timeout=300):
                     el_text = (await el.text_content() or "").strip().lower()
                     if any(w in el_text for w in ["voltar", "back", "cancelar", "editar"]):
+                        continue
+                    # Para div/span genéricos, exigir match mais exato (evitar containers grandes)
+                    if tag in ("div", "span") and len(el_text) > 60:
                         continue
                     await el.scroll_into_view_if_needed()
                     await asyncio.sleep(random.uniform(0.1, 0.25))

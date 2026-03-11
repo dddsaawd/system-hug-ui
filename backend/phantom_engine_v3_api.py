@@ -692,6 +692,27 @@ async def select_state_dropdown(page, estado: str, session: EngineSession) -> bo
 
 async def check_success(page, session: EngineSession) -> bool:
     """Verifica se a venda foi gerada com sucesso."""
+    # GUARD: Se ainda há campo de CPF/document visível e vazio, NÃO é sucesso
+    try:
+        has_unfilled_cpf = await page.evaluate("""() => {
+            const selectors = ['#document', 'input[name="document"]', 'input[name="cpf"]', '#cpf'];
+            for (const sel of selectors) {
+                const el = document.querySelector(sel);
+                if (el) {
+                    const rect = el.getBoundingClientRect();
+                    const val = (el.value || '').replace(/[^0-9]/g, '');
+                    if (rect.width > 0 && rect.height > 0 && val.length < 11) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }""")
+        if has_unfilled_cpf:
+            return False
+    except Exception:
+        pass
+
     # PRIMEIRO: verifica se a URL mudou para página de sucesso/pagamento
     current_url = page.url.lower()
     if any(k in current_url for k in ['/order/', '/obrigado', '/thankyou', '/thank-you', '/success', '/payment/', '/pix']):

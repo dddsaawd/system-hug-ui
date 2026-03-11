@@ -1152,9 +1152,12 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 if 'number' in field_info['name'] and addr_ctx:
                     return ('numero', 85)
                 if any(k in signals for k in ['numero', 'número', 'nº']):
-                    return ('numero', 75)
-                if field_info['placeholder'] in ['123', 'nº', 'n°']:
                     return ('numero', 80)
+                if field_info['placeholder'] in ['123', 'nº', 'n°', 'Nº']:
+                    return ('numero', 80)
+                # Zedy: label "Número" standalone (sem contexto address mas na etapa de entrega)
+                if field_info['labelText'].strip().lower() in ['número', 'numero', 'nº']:
+                    return ('numero', 85)
 
                 # COMPLEMENTO
                 if any(k in signals for k in ['complemento', 'complement', 'comp ']):
@@ -1536,6 +1539,29 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
 
             async def handle_popups_and_modals():
                 """Fecha popups, modais de cookie, upsells que bloqueiam o fluxo."""
+                # ─── Desmarcar checkboxes de upsell ANTES de fechar modais ───
+                upsell_checkbox_texts = [
+                    "adicionar", "chapéu", "chapeu", "oferta", "combo",
+                    "50% off", "desconto", "promoção", "promocao",
+                ]
+                try:
+                    checkboxes = page.locator('input[type="checkbox"]')
+                    cb_count = await checkboxes.count()
+                    for i in range(cb_count):
+                        cb = checkboxes.nth(i)
+                        try:
+                            if await cb.is_checked(timeout=300):
+                                # Verifica texto próximo para detectar upsell
+                                parent_text = await cb.evaluate("el => (el.closest('label, div, section') || el.parentElement)?.textContent || ''")
+                                parent_lower = parent_text.lower()[:200]
+                                if any(kw in parent_lower for kw in upsell_checkbox_texts):
+                                    await cb.uncheck()
+                                    session.add_log(f"  🚫 Upsell desmarcado: {parent_text[:50]}", "info")
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+
                 close_selectors = [
                     'button[aria-label="Close"]', 'button[aria-label="Fechar"]',
                     '.close-modal', '.modal-close', '[data-dismiss="modal"]',
@@ -2091,8 +2117,8 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
             
             await asyncio.sleep(random.uniform(0.5, 1.5))
             
-            # ═══ PASSO 3: Server Action — CEP + endereço + CPF ═══
-            # Payload capturado: [storeId, checkoutId, {zipcode, address, number, complement, neighborhood, city, state, cpf}]
+            # ═══ PASSO 3: Server Action — CEP + endereço (SEM CPF — CPF vai no pagamento) ═══
+            # Confirmado via screenshots: CPF aparece na etapa 3 "Opção de pagamento", não na etapa 2 "Entrega"
             if resolved["shipping"].get("requiresZipcode") or config.zipcode or True:  # sempre enviar
                 session.add_log("📤 Enviando CEP e endereço...", "info")
                 zipcode = config.zipcode or addr["cep"]
@@ -2107,7 +2133,6 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
                         "neighborhood": addr["bairro"],
                         "city": addr["cidade"],
                         "state": addr["estado"],
-                        "cpf": cpf_digits,
                     }
                 ])
                 
@@ -2156,11 +2181,14 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
             session.add_log(f"📤 Finalizando pedido com {payment_method.upper()}...", "info")
             session.add_log(f"   Gateway: {'Prime Cash' if payment_method == 'pix' else 'Pagou.ai'}", "info")
             
+            # Formata CPF com máscara (000.000.000-00) como esperado pelo checkout
+            cpf_masked = f"{cpf_digits[:3]}.{cpf_digits[3:6]}.{cpf_digits[6:9]}-{cpf_digits[9:11]}" if len(cpf_digits) == 11 else cpf_digits
+            
             payment_payload = json.dumps([
                 store_id, checkout_id,
                 {
                     "paymentMethod": payment_method,
-                    "cpf": cpf_digits,
+                    "cpf": cpf_masked,
                 }
             ])
             

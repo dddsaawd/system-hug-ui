@@ -3,7 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Instala dependencias Python
-RUN pip install --no-cache-dir fastapi uvicorn pydantic playwright
+RUN pip install --no-cache-dir fastapi uvicorn pydantic playwright httpx
 
 # Instala Chromium COMPLETO (não headless_shell) com todas as deps de sistema
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright

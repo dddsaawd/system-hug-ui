@@ -38,6 +38,7 @@ export function DirectApiPanel({
   onEngineModeChange,
   onDirectConfigChange,
   disabled,
+  cpfsList = [],
 }: DirectApiPanelProps) {
   const [paymentMethod, setPaymentMethod] = useState<"pix" | "credit_card" | "boleto">("pix");
   const [zipcode, setZipcode] = useState("79180000");

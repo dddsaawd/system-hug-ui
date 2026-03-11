@@ -218,18 +218,18 @@ def get_random_user_data(cpf_list: list[str]) -> dict:
     return {"name": nome, "email": email, "cpf": cpf, "phone": celular}
 
 def get_random_address() -> dict:
-    """Gera um endereco brasileiro aleatorio."""
+    """Gera um endereco brasileiro aleatorio com CEP formatado (XXXXX-XXX)."""
     enderecos = [
-        {"cep": "01001000", "rua": "Praca da Se", "bairro": "Se", "cidade": "Sao Paulo", "estado": "SP"},
-        {"cep": "20040020", "rua": "Rua do Ouvidor", "bairro": "Centro", "cidade": "Rio de Janeiro", "estado": "RJ"},
-        {"cep": "30130000", "rua": "Avenida Afonso Pena", "bairro": "Centro", "cidade": "Belo Horizonte", "estado": "MG"},
-        {"cep": "40020000", "rua": "Rua Chile", "bairro": "Comercio", "cidade": "Salvador", "estado": "BA"},
-        {"cep": "50010000", "rua": "Avenida Guararapes", "bairro": "Santo Antonio", "cidade": "Recife", "estado": "PE"},
-        {"cep": "60060000", "rua": "Rua Floriano Peixoto", "bairro": "Centro", "cidade": "Fortaleza", "estado": "CE"},
-        {"cep": "70040900", "rua": "Esplanada dos Ministerios", "bairro": "Zona Civica", "cidade": "Brasilia", "estado": "DF"},
-        {"cep": "80010000", "rua": "Rua XV de Novembro", "bairro": "Centro", "cidade": "Curitiba", "estado": "PR"},
-        {"cep": "90010000", "rua": "Rua dos Andradas", "bairro": "Centro Historico", "cidade": "Porto Alegre", "estado": "RS"},
-        {"cep": "79002000", "rua": "Rua 14 de Julho", "bairro": "Centro", "cidade": "Campo Grande", "estado": "MS"},
+        {"cep": "01001-000", "rua": "Praca da Se", "bairro": "Se", "cidade": "Sao Paulo", "estado": "SP"},
+        {"cep": "20040-020", "rua": "Rua do Ouvidor", "bairro": "Centro", "cidade": "Rio de Janeiro", "estado": "RJ"},
+        {"cep": "30130-000", "rua": "Avenida Afonso Pena", "bairro": "Centro", "cidade": "Belo Horizonte", "estado": "MG"},
+        {"cep": "40020-000", "rua": "Rua Chile", "bairro": "Comercio", "cidade": "Salvador", "estado": "BA"},
+        {"cep": "50010-000", "rua": "Avenida Guararapes", "bairro": "Santo Antonio", "cidade": "Recife", "estado": "PE"},
+        {"cep": "60060-000", "rua": "Rua Floriano Peixoto", "bairro": "Centro", "cidade": "Fortaleza", "estado": "CE"},
+        {"cep": "70040-900", "rua": "Esplanada dos Ministerios", "bairro": "Zona Civica", "cidade": "Brasilia", "estado": "DF"},
+        {"cep": "80010-000", "rua": "Rua XV de Novembro", "bairro": "Centro", "cidade": "Curitiba", "estado": "PR"},
+        {"cep": "90010-000", "rua": "Rua dos Andradas", "bairro": "Centro Historico", "cidade": "Porto Alegre", "estado": "RS"},
+        {"cep": "79002-000", "rua": "Rua 14 de Julho", "bairro": "Centro", "cidade": "Campo Grande", "estado": "MS"},
     ]
     addr = random.choice(enderecos)
     addr["numero"] = str(random.randint(10, 999))
@@ -340,14 +340,17 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
         except Exception:
             continue
 
-    # ─── Estrategia 2: CSS selector button/a com has-text ───
+    # ─── Estrategia 2: CSS selector button/a/div/span com has-text ───
     for text in button_texts:
-        for tag in ["button", "a"]:
+        for tag in ["button", "a", "div[role='button']", "span[role='button']", "div", "span"]:
             try:
                 el = page.locator(f'{tag}:has-text("{text}")').first
                 if await el.is_visible(timeout=300):
                     el_text = (await el.text_content() or "").strip().lower()
                     if any(w in el_text for w in ["voltar", "back", "cancelar", "editar"]):
+                        continue
+                    # Para div/span genéricos, exigir match mais exato (evitar containers grandes)
+                    if tag in ("div", "span") and len(el_text) > 60:
                         continue
                     await el.scroll_into_view_if_needed()
                     await asyncio.sleep(random.uniform(0.1, 0.25))
@@ -393,6 +396,24 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
     except Exception:
         pass
 
+    # ─── Estrategia 5: getByText para elementos não-standard (div, span sem role) ───
+    priority_texts = ["ESCOLHER FRETE", "Escolher frete", "Escolher Frete",
+                      "CONTINUAR", "Continuar", "IR PARA PAGAMENTO", "Ir para pagamento",
+                      "FINALIZAR COMPRA", "Finalizar compra", "GERAR PIX", "Gerar Pix"]
+    for text in priority_texts:
+        try:
+            el = page.get_by_text(text, exact=False).first
+            if await el.is_visible(timeout=300):
+                el_text = (await el.text_content() or "").strip()
+                if len(el_text) < 60:  # Não clica em containers grandes
+                    await el.scroll_into_view_if_needed()
+                    await asyncio.sleep(random.uniform(0.1, 0.25))
+                    await el.click(timeout=5000)
+                    session.add_log(f"  Botao (text) '{el_text[:40]}' clicado!", "success")
+                    return True
+        except Exception:
+            continue
+
     # ─── Debug: listar botoes visiveis ───
     try:
         all_btns = page.locator("button")
@@ -405,6 +426,18 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
                     txt = (await btn.text_content() or "").strip()[:30]
                     if txt:
                         visible_texts.append(txt)
+            except Exception:
+                pass
+        # Também lista div/span clicáveis
+        clickables = page.locator("div[role='button'], span[role='button'], a[role='button'], [class*='btn'], [class*='button']")
+        c_count = await clickables.count()
+        for i in range(min(c_count, 10)):
+            el = clickables.nth(i)
+            try:
+                if await el.is_visible(timeout=200):
+                    txt = (await el.text_content() or "").strip()[:30]
+                    if txt and txt not in visible_texts:
+                        visible_texts.append(f"[div/span]{txt}")
             except Exception:
                 pass
         if visible_texts:
@@ -1403,6 +1436,19 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                         await asyncio.sleep(random.uniform(0.03, 0.08))
                         await el.fill(value)
                         await asyncio.sleep(random.uniform(0.1, 0.25))
+                        
+                        # CRÍTICO: Dispara blur/input/change para React/Next.js atualizar estado
+                        try:
+                            await page.evaluate(f"""(idx) => {{
+                                const el = document.querySelector('[data-phantom-idx="' + idx + '"]');
+                                if (el) {{
+                                    el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                    el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                    el.dispatchEvent(new Event('blur', {{ bubbles: true }}));
+                                }}
+                            }}""", field_info["idx"])
+                        except Exception:
+                            pass
 
                         label = FIELD_LABELS.get(field_type, field_type)
                         display = value[:25] + ("..." if len(value) > 25 else "")
@@ -1413,6 +1459,12 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                         # Delay pós-preenchimento (CEP → auto-complete)
                         if field_type in POST_FILL_DELAY:
                             session.add_log(f"  Aguardando auto-preenchimento ({label})...", "info")
+                            # Tab out do campo CEP para disparar lookup
+                            try:
+                                await page.keyboard.press("Tab")
+                                await asyncio.sleep(0.5)
+                            except Exception:
+                                pass
                             await asyncio.sleep(POST_FILL_DELAY[field_type])
 
                     except Exception as e:

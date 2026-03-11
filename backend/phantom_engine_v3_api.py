@@ -1539,6 +1539,29 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
 
             async def handle_popups_and_modals():
                 """Fecha popups, modais de cookie, upsells que bloqueiam o fluxo."""
+                # ─── Desmarcar checkboxes de upsell ANTES de fechar modais ───
+                upsell_checkbox_texts = [
+                    "adicionar", "chapéu", "chapeu", "oferta", "combo",
+                    "50% off", "desconto", "promoção", "promocao",
+                ]
+                try:
+                    checkboxes = page.locator('input[type="checkbox"]')
+                    cb_count = await checkboxes.count()
+                    for i in range(cb_count):
+                        cb = checkboxes.nth(i)
+                        try:
+                            if await cb.is_checked(timeout=300):
+                                # Verifica texto próximo para detectar upsell
+                                parent_text = await cb.evaluate("el => (el.closest('label, div, section') || el.parentElement)?.textContent || ''")
+                                parent_lower = parent_text.lower()[:200]
+                                if any(kw in parent_lower for kw in upsell_checkbox_texts):
+                                    await cb.uncheck()
+                                    session.add_log(f"  🚫 Upsell desmarcado: {parent_text[:50]}", "info")
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+
                 close_selectors = [
                     'button[aria-label="Close"]', 'button[aria-label="Fechar"]',
                     '.close-modal', '.modal-close', '[data-dismiss="modal"]',

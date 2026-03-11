@@ -1430,8 +1430,36 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     # PREENCHE via Playwright (garante eventos React/Vue/Angular)
                     try:
                         el = page.locator(f'[data-phantom-idx="{field_info["idx"]}"]').first
-                        if not await el.is_visible(timeout=500):
-                            continue
+                        
+                        # Scroll ao campo antes de checar visibilidade
+                        try:
+                            await el.scroll_into_view_if_needed(timeout=2000)
+                            await asyncio.sleep(0.3)
+                        except Exception:
+                            pass
+                        
+                        if not await el.is_visible(timeout=1000):
+                            label = FIELD_LABELS.get(field_type, field_type)
+                            session.add_log(f"  ⚠️ {label} detectado mas não visível — tentando por ID/name...", "info")
+                            # Fallback: tenta localizar por id ou name
+                            fallback_el = None
+                            if field_info.get('id'):
+                                fallback_el = page.locator(f'#{field_info["id"]}').first
+                            elif field_info.get('name'):
+                                fallback_el = page.locator(f'[name="{field_info["name"]}"]').first
+                            if fallback_el:
+                                try:
+                                    await fallback_el.scroll_into_view_if_needed(timeout=1000)
+                                    await asyncio.sleep(0.2)
+                                    if await fallback_el.is_visible(timeout=500):
+                                        el = fallback_el
+                                        session.add_log(f"  ✅ {label} encontrado via fallback!", "info")
+                                    else:
+                                        continue
+                                except Exception:
+                                    continue
+                            else:
+                                continue
 
                         await el.click()
                         await asyncio.sleep(random.uniform(0.05, 0.15))
@@ -1441,12 +1469,12 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                         await asyncio.sleep(random.uniform(0.1, 0.25))
                         
                         # CRÍTICO: Usa React native setter para forçar atualização de estado
-                        # O Playwright .fill() nem sempre dispara onChange em inputs controlados do React
                         try:
                             await page.evaluate(f"""(data) => {{
-                                const el = document.querySelector('[data-phantom-idx="' + data.idx + '"]');
+                                const el = document.querySelector('[data-phantom-idx="' + data.idx + '"]') 
+                                    || document.getElementById(data.id || '')
+                                    || document.querySelector('[name="' + (data.name || '') + '"]');
                                 if (el) {{
-                                    // Trick: usa Object.getOwnPropertyDescriptor para acessar o setter nativo do HTMLInputElement
                                     const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
                                         window.HTMLInputElement.prototype, 'value'
                                     ).set;
@@ -1455,7 +1483,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                     el.dispatchEvent(new Event('change', {{ bubbles: true }}));
                                     el.dispatchEvent(new Event('blur', {{ bubbles: true }}));
                                 }}
-                            }}""", {"idx": field_info["idx"], "value": value})
+                            }}""", {"idx": field_info["idx"], "value": value, "id": field_info.get("id", ""), "name": field_info.get("name", "")})
                         except Exception:
                             pass
 
@@ -1472,7 +1500,6 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             try:
                                 await page.keyboard.press("Tab")
                                 await asyncio.sleep(0.3)
-                                # Clica fora do campo para garantir blur
                                 await page.click("body", position={"x": 10, "y": 10})
                                 await asyncio.sleep(0.5)
                             except Exception:
@@ -1480,7 +1507,6 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             await asyncio.sleep(POST_FILL_DELAY[field_type])
                             
                             # Após o delay, re-checa se o CEP disparou busca via XHR
-                            # Se não expandiu, tenta preencher via teclado como fallback
                             try:
                                 new_fields = await page.evaluate(EXTRACT_FIELDS_JS)
                                 addr_found = sum(1 for f in (new_fields or []) if classify_field(f)[0] in ('rua', 'bairro', 'cidade'))
@@ -1489,17 +1515,43 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                     await el.click()
                                     await el.press("Control+a")
                                     await asyncio.sleep(0.1)
-                                    # Digita caractere por caractere para simular digitação real
                                     for char in value:
                                         await page.keyboard.type(char, delay=50)
                                     await asyncio.sleep(0.3)
                                     await page.keyboard.press("Tab")
                                     await asyncio.sleep(5.0)
+                                else:
+                                    session.add_log(f"  ✅ CEP expandiu {addr_found} campos de endereço!", "success")
                             except Exception:
                                 pass
 
                     except Exception as e:
                         session.add_log(f"  Erro {FIELD_LABELS.get(field_type, field_type)}: {str(e)[:40]}", "error")
+
+                # FALLBACK FINAL: se CEP não foi preenchido, tenta direto por #zipcode
+                if 'cep' not in filled:
+                    cep_value = FIELD_VALUES.get('cep', '')
+                    if cep_value:
+                        session.add_log("  🔄 CEP não preenchido — tentando fallback #zipcode...", "info")
+                        try:
+                            cep_el = page.locator('#zipcode, [id*="cep"], [id*="zip"], [name*="cep"], [name*="zip"]').first
+                            await cep_el.scroll_into_view_if_needed(timeout=2000)
+                            await asyncio.sleep(0.3)
+                            if await cep_el.is_visible(timeout=1000):
+                                await cep_el.click()
+                                await asyncio.sleep(0.1)
+                                await cep_el.fill("")
+                                await asyncio.sleep(0.05)
+                                # Digita char por char para garantir evento React
+                                for char in cep_value:
+                                    await page.keyboard.type(char, delay=60)
+                                await asyncio.sleep(0.3)
+                                await page.keyboard.press("Tab")
+                                session.add_log(f"  CEP: {cep_value} (fallback direto)", "info")
+                                filled['cep'] = True
+                                await asyncio.sleep(5.0)  # aguarda expansão
+                        except Exception as e:
+                            session.add_log(f"  Fallback CEP falhou: {str(e)[:40]}", "error")
 
                 return filled
 

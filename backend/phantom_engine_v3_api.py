@@ -2040,7 +2040,8 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
                 headers_init["Next-Action"] = action_ids[0]
             
             resp_init = await client.post(checkout_url, content=cart_init_payload, headers=headers_init)
-            session.add_log(f"   Cart init: {resp_init.status_code}", "info" if resp_init.status_code == 200 else "error")
+            is_html = resp_init.text.strip().startswith("<!DOCTYPE") or resp_init.text.strip().startswith("<html")
+            session.add_log(f"   Cart init: {resp_init.status_code} {'⚠️ HTML (sem action ID?)' if is_html else '✅ RSC'}", "info" if not is_html else "error")
             
             await asyncio.sleep(random.uniform(0.3, 0.8))
             

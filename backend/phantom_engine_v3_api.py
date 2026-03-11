@@ -1152,9 +1152,12 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 if 'number' in field_info['name'] and addr_ctx:
                     return ('numero', 85)
                 if any(k in signals for k in ['numero', 'número', 'nº']):
-                    return ('numero', 75)
-                if field_info['placeholder'] in ['123', 'nº', 'n°']:
                     return ('numero', 80)
+                if field_info['placeholder'] in ['123', 'nº', 'n°', 'Nº']:
+                    return ('numero', 80)
+                # Zedy: label "Número" standalone (sem contexto address mas na etapa de entrega)
+                if field_info['labelText'].strip().lower() in ['número', 'numero', 'nº']:
+                    return ('numero', 85)
 
                 # COMPLEMENTO
                 if any(k in signals for k in ['complemento', 'complement', 'comp ']):

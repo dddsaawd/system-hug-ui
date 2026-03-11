@@ -230,8 +230,15 @@ export function DirectApiPanel({
                   <span className="text-muted-foreground">👤 {previewData.name}</span>
                   <span className="text-muted-foreground">📧 {previewData.email}</span>
                   <span className="text-muted-foreground">📱 {previewData.phone}</span>
-                  <span className="text-muted-foreground">🆔 {previewData.cpf}</span>
+                  <span className={hasCpfs ? "text-primary font-semibold" : "text-destructive"}>
+                    🆔 {hasCpfs ? `${previewCpf} (da lista)` : "⚠️ Carregue CPFs!"}
+                  </span>
                 </div>
+                {!hasCpfs && (
+                  <p className="text-[10px] text-destructive mt-1.5 font-medium">
+                    ⚠️ CPF aleatório NÃO gera PIX. Carregue CPFs válidos acima.
+                  </p>
+                )}
               </CardContent>
             </Card>
 

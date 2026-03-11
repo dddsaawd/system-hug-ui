@@ -52,6 +52,8 @@ export function DirectApiPanel({
   const isDirectReady = isZedy && !!token;
 
   const previewData = generateRandomOrderData();
+  const hasCpfs = cpfsList.length > 0;
+  const previewCpf = hasCpfs ? cpfsList[0] : null;
 
   const handleModeSwitch = (mode: EngineMode) => {
     onEngineModeChange(mode);

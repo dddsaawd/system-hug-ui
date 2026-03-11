@@ -700,11 +700,13 @@ async def select_state_dropdown(page, estado: str, session: EngineSession) -> bo
 
 async def check_success(page, session: EngineSession) -> bool:
     """Verifica se a venda foi gerada com sucesso."""
-    # GUARD: Se ainda há campo de CPF/document visível e vazio, NÃO é sucesso
+    # GUARD RIGOROSO: Se QUALQUER campo de CPF/document existe e não foi preenchido, NÃO é sucesso
     try:
         has_unfilled_cpf = await page.evaluate("""() => {
-            const selectors = ['#document', 'input[name="document"]', 'input[name="cpf"]', '#cpf'];
-            for (const sel of selectors) {
+            // Busca por seletores diretos
+            const directSelectors = ['#document', 'input[name="document"]', 'input[name="cpf"]', '#cpf',
+                                      'input[id*="document"]', 'input[id*="cpf"]', 'input[name*="cpf"]'];
+            for (const sel of directSelectors) {
                 const el = document.querySelector(sel);
                 if (el) {
                     const rect = el.getBoundingClientRect();
@@ -714,9 +716,33 @@ async def check_success(page, session: EngineSession) -> bool:
                     }
                 }
             }
+            // Busca por label "CPF" associado a input
+            const labels = document.querySelectorAll('label');
+            for (const label of labels) {
+                const text = (label.textContent || '').trim().toLowerCase();
+                if (text === 'cpf' || text.includes('cpf')) {
+                    const forId = label.getAttribute('for');
+                    let input = null;
+                    if (forId) input = document.getElementById(forId);
+                    if (!input) input = label.querySelector('input');
+                    if (!input) {
+                        // Busca input irmão
+                        const parent = label.parentElement;
+                        if (parent) input = parent.querySelector('input');
+                    }
+                    if (input) {
+                        const rect = input.getBoundingClientRect();
+                        const val = (input.value || '').replace(/[^0-9]/g, '');
+                        if (rect.width > 0 && rect.height > 0 && val.length < 11) {
+                            return true;
+                        }
+                    }
+                }
+            }
             return false;
         }""")
         if has_unfilled_cpf:
+            session.add_log("  ⛔ CPF não preenchido — bloqueando falso sucesso", "info")
             return False
     except Exception:
         pass

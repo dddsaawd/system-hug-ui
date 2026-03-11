@@ -396,6 +396,24 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
     except Exception:
         pass
 
+    # ─── Estrategia 5: getByText para elementos não-standard (div, span sem role) ───
+    priority_texts = ["ESCOLHER FRETE", "Escolher frete", "Escolher Frete",
+                      "CONTINUAR", "Continuar", "IR PARA PAGAMENTO", "Ir para pagamento",
+                      "FINALIZAR COMPRA", "Finalizar compra", "GERAR PIX", "Gerar Pix"]
+    for text in priority_texts:
+        try:
+            el = page.get_by_text(text, exact=False).first
+            if await el.is_visible(timeout=300):
+                el_text = (await el.text_content() or "").strip()
+                if len(el_text) < 60:  # Não clica em containers grandes
+                    await el.scroll_into_view_if_needed()
+                    await asyncio.sleep(random.uniform(0.1, 0.25))
+                    await el.click(timeout=5000)
+                    session.add_log(f"  Botao (text) '{el_text[:40]}' clicado!", "success")
+                    return True
+        except Exception:
+            continue
+
     # ─── Debug: listar botoes visiveis ───
     try:
         all_btns = page.locator("button")
@@ -408,6 +426,18 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
                     txt = (await btn.text_content() or "").strip()[:30]
                     if txt:
                         visible_texts.append(txt)
+            except Exception:
+                pass
+        # Também lista div/span clicáveis
+        clickables = page.locator("div[role='button'], span[role='button'], a[role='button'], [class*='btn'], [class*='button']")
+        c_count = await clickables.count()
+        for i in range(min(c_count, 10)):
+            el = clickables.nth(i)
+            try:
+                if await el.is_visible(timeout=200):
+                    txt = (await el.text_content() or "").strip()[:30]
+                    if txt and txt not in visible_texts:
+                        visible_texts.append(f"[div/span]{txt}")
             except Exception:
                 pass
         if visible_texts:

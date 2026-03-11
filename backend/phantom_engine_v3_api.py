@@ -578,9 +578,17 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
                 if (/^CEP.*Número.*Bairro/i.test(text)) continue;
                 if (/Endereço\\/Rua.*Número.*Bairro/i.test(text)) continue;
                 
+                // SKIP: product cards (contém "Quantidade" ou seletor de qty)
+                if (/quantidade/i.test(text)) continue;
+                if (el.querySelector && el.querySelector('select[name*="quantity"]')) continue;
+                // SKIP: textos que parecem produto (nome + preço sem carrier/frete/envio)
+                const looksLikeProduct = /r\$\s*\d/.test(lower) && !lower.includes('frete') && !lower.includes('envio') && !lower.includes('entrega');
+                const hasAnyCarrier = ['jadlog', 'correios', 'pac', 'sedex', 'azul cargo', 'total express', 'loggi'].some(c => lower.includes(c));
+                if (looksLikeProduct && !hasAnyCarrier) continue;
+
                 // Score de relevância
                 let score = 0;
-                const hasCarrier = carriers.some(c => lower.includes(c));
+                const hasCarrier = hasAnyCarrier;
                 const hasPrice = /r\\$\\s*\\d/.test(lower) || lower.includes('grátis') || lower.includes('gratis') || lower.includes('free');
                 const hasFrete = lower.includes('frete') && !lower.includes('escolher frete');
                 const hasDias = /\\d+\\s*(dias?|úteis|uteis|horas?)/.test(lower);

@@ -672,27 +672,30 @@ async def select_state_dropdown(page, estado: str, session: EngineSession) -> bo
 
 async def check_success(page, session: EngineSession) -> bool:
     """Verifica se a venda foi gerada com sucesso."""
-    # Primeiro tenta via seletores visuais
+    # PRIMEIRO: verifica se a URL mudou para página de sucesso/pagamento
+    current_url = page.url.lower()
+    if any(k in current_url for k in ['/order/', '/obrigado', '/thankyou', '/thank-you', '/success', '/payment/', '/pix']):
+        session.add_log(f"VENDA GERADA! URL de sucesso: {page.url[:80]}", "success")
+        return True
+
+    # Seletores visuais — só valida se for ESPECÍFICO de sucesso (não genérico)
     sucesso_selectors = [
         'text="Pedido realizado"', 'text="pedido realizado"',
         'text="Compra realizada"', 'text="compra realizada"',
         'text="Pagamento gerado"', 'text="pagamento gerado"',
         'text="PIX gerado"', 'text="Pix gerado"', 'text="pix gerado"',
-        'text="QR Code"', 'text="qr code"', 'text="QR code"',
         'text="Copia e Cola"', 'text="copia e cola"',
         'text="Copiar codigo"', 'text="Copiar código"',
         'text="Copie o código"', 'text="copie o código"',
         'text="Aguardando pagamento"', 'text="aguardando pagamento"',
-        'text="Obrigado"', 'text="obrigado"',
         'text="Parabéns"', 'text="parabens"',
-        'text="sucesso"', 'text="Sucesso"',
         'text="Boleto gerado"', 'text="boleto gerado"',
         'text="Pedido confirmado"', 'text="pedido confirmado"',
         'text="Pedido criado"', 'text="pedido criado"',
         'text="Pague com Pix"', 'text="pague com pix"',
         'text="Escaneie o QR"', 'text="escaneie o qr"',
         'img[alt*="qr"]', 'img[alt*="QR"]',
-        'canvas', '[class*="qr"]', '[class*="pix-code"]',
+        '[class*="pix-code"]',
     ]
     for sel in sucesso_selectors:
         try:
@@ -703,23 +706,33 @@ async def check_success(page, session: EngineSession) -> bool:
         except Exception:
             continue
 
-    # Fallback: verifica texto da pagina
+    # Fallback: verifica texto + contexto (precisa ter múltiplos indicadores)
     try:
         page_text = await page.text_content("body")
         if page_text:
             lower = page_text.lower()
-            indicadores = [
-                "pix gerado", "qr code", "aguardando pagamento",
-                "pedido realizado", "compra realizada", "obrigado",
-                "copia e cola", "copiar codigo", "copiar código",
+            # Indicadores FORTES (1 basta)
+            strong = [
+                "pix gerado", "aguardando pagamento", "pedido realizado",
+                "compra realizada", "copia e cola", "copiar codigo", "copiar código",
                 "boleto gerado", "pedido confirmado", "pedido criado",
                 "pague com pix", "escaneie o qr", "copie o código",
                 "pagamento via pix", "código pix",
             ]
-            for ind in indicadores:
+            for ind in strong:
                 if ind in lower:
                     session.add_log(f"VENDA GERADA! Texto detectado: '{ind}'", "success")
                     return True
+
+            # "qr code" e "obrigado" são FRACOS — precisam de contexto extra
+            weak_indicators = ["qr code", "obrigado", "sucesso"]
+            confirm_context = ["copiar", "copia", "pagar", "escaneie", "prazo", "pedido", "pagamento confirmado"]
+            for ind in weak_indicators:
+                if ind in lower:
+                    # Só conta se tiver contexto de pagamento concluído
+                    if any(ctx in lower for ctx in confirm_context):
+                        session.add_log(f"VENDA GERADA! Texto: '{ind}' + contexto confirmado", "success")
+                        return True
     except Exception:
         pass
 

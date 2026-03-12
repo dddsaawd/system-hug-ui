@@ -491,8 +491,7 @@ async def select_pix_payment(page, session: EngineSession) -> bool:
     for sel in pix_selectors:
         try:
             el = page.locator(sel).first
-            if await el.is_visible(timeout=1500):
-                # Verifica se ja esta selecionado
+            if await el.is_visible(timeout=800):
                 try:
                     is_checked = await el.locator('input[type="radio"]').first.is_checked()
                     if is_checked:

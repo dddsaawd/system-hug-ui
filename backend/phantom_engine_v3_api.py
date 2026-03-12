@@ -331,8 +331,8 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
                 if any(w in btn_text for w in ["voltar", "back", "cancelar", "editar"]):
                     continue
                 await btn.scroll_into_view_if_needed()
-                await asyncio.sleep(random.uniform(0.1, 0.25))
-                await btn.click(timeout=5000)
+                await asyncio.sleep(0.1)
+                await btn.click(timeout=3000)
                 session.add_log(f"  Botao '{text}' clicado!", "success")
                 return True
         except Exception:

@@ -1253,7 +1253,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             break
 
                         # A cada ~12s, tenta acionar botão de ponte WooCommerce
-                        if wait_i in (5, 11, 17, 23, 29, 35):
+                        if wait_i in (4, 8, 12):
                             woo_btns = [
                                 '#place_order',
                                 'button[name="woocommerce_checkout_place_order"]',

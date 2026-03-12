@@ -2492,7 +2492,7 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
                 if not shipping_methods:
                     shipping_methods = re.findall(r'"id"\s*:\s*"?(\d+)"?', resp2_text)
                 
-                await asyncio.sleep(random.uniform(0.5, 1.5))
+                await asyncio.sleep(random.uniform(0.2, 0.5))
             
             # ═══ PASSO 4: Server Action — selecionar frete ═══
             session.add_log("📤 Selecionando frete...", "info")

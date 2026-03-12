@@ -2129,7 +2129,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             session.add_log("  📜 Scroll para revelar campos...", "info")
                         except Exception:
                             pass
-                    await asyncio.sleep(2.0)
+                    await asyncio.sleep(0.5)
                     continue
                 else:
                     stale_count = 0

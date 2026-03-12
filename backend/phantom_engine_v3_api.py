@@ -326,7 +326,7 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
     for text in button_texts:
         try:
             btn = page.get_by_role("button", name=text, exact=False).first
-            if await btn.is_visible(timeout=300):
+            if await btn.is_visible(timeout=200):
                 btn_text = (await btn.text_content() or "").strip().lower()
                 if any(w in btn_text for w in ["voltar", "back", "cancelar", "editar"]):
                     continue

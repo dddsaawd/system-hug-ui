@@ -2095,8 +2095,16 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             # O check_success roda no INÍCIO do próximo loop, após scan+fill
                             continue
                         else:
-                            # Não houve transição — pode ser validação falhando
-                            session.add_log("  ⚠️ Clicou mas não avançou — possível erro de validação", "info")
+                            # Não houve transição — captura screenshot + URL para diagnóstico
+                            session.add_log(f"  ⚠️ Clicou mas não avançou — URL: {page.url[:100]}", "info")
+                            # Screenshot para debug
+                            try:
+                                import base64 as b64
+                                screenshot_bytes = await page.screenshot(type="jpeg", quality=50, full_page=False)
+                                screenshot_b64 = b64.b64encode(screenshot_bytes).decode()[:500]
+                                session.add_log(f"  📸 Screenshot (base64 preview): {screenshot_b64[:80]}...", "info")
+                            except Exception:
+                                pass
                             # Tenta ler mensagens de erro na página
                             try:
                                 errors = await page.evaluate("""() => {
@@ -2112,7 +2120,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                     session.add_log(f"  ❌ Erros na página: {errors}", "error")
                             except Exception:
                                 pass
-                            await asyncio.sleep(random.uniform(0.5, 1.0))
+                            await asyncio.sleep(random.uniform(0.3, 0.6))
 
                 # 8. Detecção de progresso
                 any_action = bool(filled) or radios_done or clicked

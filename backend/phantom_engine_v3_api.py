@@ -1209,7 +1209,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     if not moved_to_checkout:
                         opened_cart = await _click_first_visible(minicart_open_selectors, "Mini-carrinho")
                         if opened_cart:
-                            await asyncio.sleep(random.uniform(0.8, 1.4))
+                            await asyncio.sleep(random.uniform(0.3, 0.6))
                             moved_to_checkout = await _click_first_visible(checkout_from_product_selectors, "Checkout no mini-carrinho")
 
                     if not moved_to_checkout:

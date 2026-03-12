@@ -643,7 +643,7 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
                     await asyncio.sleep(0.1)
                     await el.click()
                     session.add_log(f"  ✅ Frete card clicado: {click_text}", "success")
-                    await asyncio.sleep(random.uniform(0.5, 1.0))
+                    await asyncio.sleep(0.3)
                     clicked = True
             except Exception:
                 pass

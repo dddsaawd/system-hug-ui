@@ -1274,9 +1274,9 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                         session.failures += 1
                         return False
 
-                    await asyncio.sleep(random.uniform(1.0, 2.0))
+                    await asyncio.sleep(random.uniform(0.3, 0.8))
                     try:
-                        await page.wait_for_load_state("networkidle", timeout=15000)
+                        await page.wait_for_load_state("networkidle", timeout=5000)
                     except Exception:
                         pass
 

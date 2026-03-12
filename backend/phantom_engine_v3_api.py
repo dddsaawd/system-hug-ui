@@ -1812,7 +1812,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                         await page.keyboard.type(char, delay=50)
                                     await asyncio.sleep(0.3)
                                     await page.keyboard.press("Tab")
-                                    await asyncio.sleep(5.0)
+                                    await asyncio.sleep(2.0)
                                 else:
                                     session.add_log(f"  ✅ CEP expandiu {addr_found} campos de endereço!", "success")
                             except Exception:

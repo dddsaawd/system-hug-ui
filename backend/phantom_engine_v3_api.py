@@ -452,7 +452,7 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
 async def smart_select_country_brazil(page, session: EngineSession) -> bool:
     """Tenta selecionar Brasil (+55) no seletor de pais."""
     try:
-        country_btn = page.locator('button[role="combobox"]').first
+        country_btn = page.locator('button[role="combobox"]').first  
         if await country_btn.is_visible(timeout=2000):
             current_text = (await country_btn.text_content()) or ""
             if "+55" in current_text or "Brasil" in current_text:

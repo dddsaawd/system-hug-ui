@@ -1168,7 +1168,60 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                         except Exception:
                             pass
                 
-                session.add_log(f"Checkout URL: {page.url[:100]}", "info")
+                session.add_log(f"URL intermediaria: {page.url[:100]}", "info")
+                
+                # ═══ ESPERA PELO REDIRECT ZEDY ═══
+                # WooCommerce /finalizar-compra/ tem um bridge script que redireciona
+                # para seguro.*.com/checkout/Z-* (checkout Zedy externo)
+                # Precisamos ESPERAR esse redirect antes de iniciar preenchimento
+                current_url_check = page.url.lower()
+                is_woocommerce = any(kw in current_url_check for kw in [
+                    "finalizar-compra", "finalizar_compra", "wc-checkout",
+                    "/checkout/" if "seguro." not in current_url_check else "SKIP"
+                ])
+                is_zedy_checkout = "seguro." in current_url_check and "/checkout/z-" in current_url_check
+                
+                if is_woocommerce and not is_zedy_checkout:
+                    session.add_log("⏳ WooCommerce detectado — aguardando redirect para Zedy checkout...", "info")
+                    
+                    zedy_redirected = False
+                    for wait_i in range(30):  # Até 60 segundos
+                        await asyncio.sleep(2.0)
+                        new_url = page.url.lower()
+                        if "seguro." in new_url and "/checkout/z-" in new_url:
+                            zedy_redirected = True
+                            session.add_log(f"✅ Zedy checkout carregado: {page.url[:100]}", "success")
+                            break
+                        # Tenta clicar em botões que possam avançar o WooCommerce pro Zedy
+                        if wait_i == 5:
+                            # Tenta botão "Finalizar pedido" / "Finalizar compra" do WooCommerce
+                            woo_btns = [
+                                'button:has-text("Finalizar pedido")',
+                                'button:has-text("FINALIZAR PEDIDO")',
+                                'button:has-text("Finalizar compra")',
+                                'button:has-text("FINALIZAR COMPRA")',
+                                '#place_order',
+                                'button[name="woocommerce_checkout_place_order"]',
+                            ]
+                            for wsel in woo_btns:
+                                try:
+                                    wel = page.locator(wsel).first
+                                    if await wel.is_visible(timeout=1000):
+                                        await wel.click()
+                                        session.add_log(f"🔄 Botao WooCommerce clicado: {wsel}", "info")
+                                        break
+                                except Exception:
+                                    continue
+                        if wait_i % 10 == 9:
+                            session.add_log(f"⏳ Ainda aguardando redirect Zedy... ({(wait_i+1)*2}s)", "info")
+                    
+                    if not zedy_redirected:
+                        session.add_log("⚠️ Timeout esperando redirect Zedy — tentando continuar com URL atual", "error")
+                    
+                    await asyncio.sleep(random.uniform(1.5, 3.0))
+                    await page.wait_for_load_state("networkidle", timeout=15000)
+                
+                session.add_log(f"Checkout URL final: {page.url[:100]}", "info")
                 await asyncio.sleep(random.uniform(1.0, 2.0))
 
             addr = get_random_address()

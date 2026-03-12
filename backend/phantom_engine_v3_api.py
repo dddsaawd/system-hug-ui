@@ -2112,7 +2112,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                     session.add_log(f"  ❌ Erros na página: {errors}", "error")
                             except Exception:
                                 pass
-                            await asyncio.sleep(random.uniform(1.5, 2.5))
+                            await asyncio.sleep(random.uniform(0.5, 1.0))
 
                 # 8. Detecção de progresso
                 any_action = bool(filled) or radios_done or clicked

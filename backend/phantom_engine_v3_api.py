@@ -2410,7 +2410,7 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
             is_html = resp_init.text.strip().startswith("<!DOCTYPE") or resp_init.text.strip().startswith("<html")
             session.add_log(f"   Cart init: {resp_init.status_code} {'⚠️ HTML (sem action ID?)' if is_html else '✅ RSC'}", "info" if not is_html else "error")
             
-            await asyncio.sleep(random.uniform(0.3, 0.8))
+            await asyncio.sleep(random.uniform(0.1, 0.3))
             
             # ═══ PASSO 1.6: Disparar tracking (InitiateCheckout + PageView) ═══
             # Replicar os eventos de tracking para autenticidade da sessão

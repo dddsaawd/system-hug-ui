@@ -501,7 +501,7 @@ async def select_pix_payment(page, session: EngineSession) -> bool:
                     pass
                 await el.click()
                 session.add_log("  Metodo PIX selecionado!", "success")
-                await asyncio.sleep(random.uniform(0.3, 0.6))
+                await asyncio.sleep(0.15)
                 return True
         except Exception:
             continue

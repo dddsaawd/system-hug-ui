@@ -343,7 +343,7 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
         for tag in ["button", "a", "div[role='button']", "span[role='button']", "div", "span"]:
             try:
                 el = page.locator(f'{tag}:has-text("{text}")').first
-            if await el.is_visible(timeout=200):
+                if await el.is_visible(timeout=200):
                     el_text = (await el.text_content() or "").strip().lower()
                     if any(w in el_text for w in ["voltar", "back", "cancelar", "editar"]):
                         continue

@@ -2156,7 +2156,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
 
             # ═══ FIM DO LOOP ═══
             session.add_log("Verificacao final...", "info")
-            await asyncio.sleep(3.0)
+            await asyncio.sleep(1.0)
             if await check_success(page, session):
                 session.successes += 1
                 return True

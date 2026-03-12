@@ -1756,11 +1756,10 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                 continue
 
                         await el.click()
-                        await asyncio.sleep(random.uniform(0.05, 0.15))
+                        await asyncio.sleep(0.05)
                         await el.fill("")
-                        await asyncio.sleep(random.uniform(0.03, 0.08))
                         await el.fill(value)
-                        await asyncio.sleep(random.uniform(0.1, 0.25))
+                        await asyncio.sleep(0.05)
                         
                         # CRÍTICO: Usa React native setter para forçar atualização de estado
                         try:

@@ -1727,8 +1727,8 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                         
                         # Scroll ao campo antes de checar visibilidade
                         try:
-                            await el.scroll_into_view_if_needed(timeout=2000)
-                            await asyncio.sleep(0.3)
+                            await el.scroll_into_view_if_needed(timeout=1000)
+                            await asyncio.sleep(0.1)
                         except Exception:
                             pass
                         

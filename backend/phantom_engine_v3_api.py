@@ -2006,7 +2006,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 start = time.time()
                 checks = 0
                 while time.time() - start < max_wait:
-                    await asyncio.sleep(0.8)
+                    await asyncio.sleep(0.5)
                     checks += 1
                     post_fp = await get_dom_fingerprint()
                     if dom_changed(pre_click_fp, post_fp):

@@ -908,7 +908,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             headless=True,
                             args=launch_args,
                             proxy=launch_proxy,
-                            timeout=60000,
+                            timeout=30000,
                         )
                         break
                     except Exception as launch_err:

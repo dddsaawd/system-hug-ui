@@ -2152,7 +2152,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
 
                 # 11. Aguardar entre scans (menor se não clicou)
                 if not clicked:
-                    await asyncio.sleep(random.uniform(0.5, 1.5))
+                    await asyncio.sleep(random.uniform(0.2, 0.5))
 
             # ═══ FIM DO LOOP ═══
             session.add_log("Verificacao final...", "info")

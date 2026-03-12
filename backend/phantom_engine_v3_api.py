@@ -2512,7 +2512,7 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
             resp3 = await client.post(checkout_url, content=shipping_payload, headers=headers_sa3)
             session.add_log(f"   Resposta frete: {resp3.status_code}", "info" if resp3.status_code == 200 else "error")
             
-            await asyncio.sleep(random.uniform(0.5, 1.5))
+            await asyncio.sleep(random.uniform(0.2, 0.5))
             
             # ═══ PASSO 5: Server Action — finalizar com pagamento ═══
             # O checkout internamente chama o gateway:

@@ -1064,20 +1064,66 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
             await page.goto(session.payload.target_url, wait_until="networkidle", timeout=60000)
             await asyncio.sleep(random.uniform(2.0, 3.5))
 
-            # ═══ PRE-CHECKOUT: Produto → Carrinho → Checkout ═══
+            # ═══ PRE-CHECKOUT: Produto → Carrinho → Checkout Zedy ═══
             if session.payload.is_product_url:
                 session.add_log("Modo PRODUTO ativo. Buscando botao de compra...", "info")
-                
+
+                def _is_zedy_checkout(url: str) -> bool:
+                    u = (url or "").lower()
+                    return "seguro." in u and "/checkout/z-" in u
+
+                def _is_woo_bridge(url: str) -> bool:
+                    u = (url or "").lower()
+                    return (
+                        "finalizar-compra" in u
+                        or "finalizar_compra" in u
+                        or "wc-checkout" in u
+                        or ("/checkout/" in u and "seguro." not in u)
+                    )
+
+                def _is_cart_like(url: str) -> bool:
+                    u = (url or "").lower()
+                    return any(k in u for k in ["/cart", "carrinho", "finalizar-compra", "wc-checkout", "/checkout/"])
+
+                async def _click_first_visible(selectors: list[str], log_prefix: str, allow_force: bool = True) -> bool:
+                    for sel in selectors:
+                        for force_click in ([False, True] if allow_force else [False]):
+                            try:
+                                el = page.locator(sel).first
+                                if await el.count() == 0:
+                                    continue
+                                if await el.is_visible(timeout=1800):
+                                    try:
+                                        await el.scroll_into_view_if_needed(timeout=2500)
+                                    except Exception:
+                                        pass
+                                    await asyncio.sleep(random.uniform(0.08, 0.2))
+                                    await el.click(timeout=7000, force=force_click)
+                                    forced = " (force)" if force_click else ""
+                                    session.add_log(f"{log_prefix} clicado: {sel}{forced}", "success")
+                                    return True
+                            except Exception:
+                                continue
+                    return False
+
                 buy_btn_selectors = [
+                    # Prioridade: botão principal do produto (evita clicar em upsell/slider)
+                    'form.cart button.single_add_to_cart_button',
+                    'button.single_add_to_cart_button',
+                    'button[name="add-to-cart"]',
+                    'form.cart button[type="submit"]',
+                    'form.cart .txn-btn-cart',
+                    # Fallbacks por texto
+                    'button:has-text("Adicionar ao carrinho")',
+                    'button:has-text("ADICIONAR AO CARRINHO")',
+                    'button:has-text("Comprar agora")',
+                    'button:has-text("COMPRAR AGORA")',
                     'button:has-text("Comprar")',
                     'button:has-text("COMPRAR")',
                     'button:has-text("Adicionar")',
                     'button:has-text("ADICIONAR")',
-                    'button:has-text("Add to cart")',
-                    'button:has-text("Comprar agora")',
-                    'button:has-text("COMPRAR AGORA")',
+                    'a:has-text("Comprar agora")',
                     'a:has-text("Comprar")',
-                    'a:has-text("COMPRAR")',
                     '[data-action="buy"]',
                     '[data-action="add-to-cart"]',
                     '.buy-button',
@@ -1085,142 +1131,144 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     '#buy-button',
                     'input[type="submit"][value*="Comprar"]',
                 ]
-                
-                buy_clicked = False
-                for sel in buy_btn_selectors:
+
+                buy_clicked = await _click_first_visible(buy_btn_selectors, "Botao de compra")
+
+                # Fallback JS: dispara submit no form.cart
+                if not buy_clicked:
                     try:
-                        el = page.locator(sel).first
-                        if await el.is_visible(timeout=1500):
-                            await el.click()
+                        js_submit_ok = await page.evaluate("""() => {
+                            const form = document.querySelector('form.cart');
+                            if (!form) return false;
+                            const btn = form.querySelector('button.single_add_to_cart_button, button[name="add-to-cart"], button[type="submit"]');
+                            if (btn) {
+                                btn.click();
+                                return true;
+                            }
+                            form.requestSubmit ? form.requestSubmit() : form.submit();
+                            return true;
+                        }""")
+                        if js_submit_ok:
                             buy_clicked = True
-                            session.add_log(f"Botao de compra clicado: {sel}", "success")
-                            break
+                            session.add_log("Botao de compra acionado via JS (form.cart)", "success")
                     except Exception:
-                        continue
-                
+                        pass
+
                 if not buy_clicked:
                     session.add_log("Nao encontrou botao de compra na pagina do produto!", "error")
                     session.failures += 1
                     return False
-                
-                await asyncio.sleep(random.uniform(2.0, 4.0))
-                
-                # Verifica se foi pro carrinho ou direto pro checkout
+
+                await asyncio.sleep(random.uniform(1.6, 2.8))
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=12000)
+                except Exception:
+                    pass
+
                 current_url = page.url.lower()
-                if "cart" in current_url or "carrinho" in current_url:
-                    session.add_log("Pagina do carrinho detectada. Buscando botao de checkout...", "info")
-                    
-                    checkout_btn_selectors = [
-                        'button:has-text("Finalizar")',
-                        'button:has-text("FINALIZAR")',
-                        'button:has-text("Checkout")',
-                        'button:has-text("CHECKOUT")',
-                        'button:has-text("Fechar pedido")',
-                        'button:has-text("FECHAR PEDIDO")',
-                        'button:has-text("Continuar")',
-                        'button:has-text("CONTINUAR")',
-                        'button:has-text("Ir para pagamento")',
-                        'a:has-text("Finalizar")',
-                        'a:has-text("Checkout")',
-                        'a:has-text("Fechar pedido")',
-                        'a[href*="checkout"]',
-                        '.checkout-button',
-                        '.btn-checkout',
-                        '#checkout-button',
+
+                # Se ficou na página do produto, tenta checkout do mini-carrinho/links de avanço
+                if not _is_zedy_checkout(current_url) and not _is_cart_like(current_url):
+                    session.add_log(f"URL apos clique: {page.url[:90]} (ainda produto). Tentando abrir checkout...", "info")
+
+                    minicart_open_selectors = [
+                        '.xoo-wsc-basket', '.xoo-wscb-icon', '.xoo-wsch-basket',
+                        'button:has-text("Carrinho")', 'a:has-text("Carrinho")',
                     ]
-                    
-                    checkout_clicked = False
-                    for sel in checkout_btn_selectors:
+                    checkout_from_product_selectors = [
+                        'a.added_to_cart.wc-forward',
+                        '.woocommerce-message a.button',
+                        '.xoo-wsc-ft-btn-checkout',
+                        '.xoo-wsc-ft-btn-viewcart',
+                        'a[href*="finalizar-compra"]',
+                        'a[href*="checkout"]',
+                        'a[href*="carrinho"]',
+                        'button:has-text("Finalizar compra")',
+                        'button:has-text("Finalizar pedido")',
+                    ]
+
+                    moved_to_checkout = await _click_first_visible(checkout_from_product_selectors, "Acesso ao checkout")
+
+                    if not moved_to_checkout:
+                        opened_cart = await _click_first_visible(minicart_open_selectors, "Mini-carrinho")
+                        if opened_cart:
+                            await asyncio.sleep(random.uniform(0.8, 1.4))
+                            moved_to_checkout = await _click_first_visible(checkout_from_product_selectors, "Checkout no mini-carrinho")
+
+                    if not moved_to_checkout:
+                        # Fallback final: navega para rota de checkout WooCommerce
                         try:
-                            el = page.locator(sel).first
-                            if await el.is_visible(timeout=1500):
-                                await el.click()
-                                checkout_clicked = True
-                                session.add_log(f"Botao de checkout clicado: {sel}", "success")
+                            origin = await page.evaluate("() => window.location.origin")
+                        except Exception:
+                            origin = ""
+
+                        for pth in ["/finalizar-compra/", "/checkout/", "/carrinho/"]:
+                            if not origin:
                                 break
-                        except Exception:
-                            continue
-                    
-                    if not checkout_clicked:
-                        session.add_log("Nao encontrou botao de checkout no carrinho!", "error")
-                        session.failures += 1
-                        return False
-                    
-                    await asyncio.sleep(random.uniform(2.0, 4.0))
-                    await page.wait_for_load_state("networkidle", timeout=30000)
-                
-                elif "checkout" in current_url:
-                    session.add_log("Redirecionado direto para checkout!", "success")
-                else:
-                    # Pode ter aberto um modal ou ficado na mesma pagina
-                    session.add_log(f"URL apos clique: {page.url[:80]}. Aguardando redirecionamento...", "info")
-                    await asyncio.sleep(3.0)
-                    current_url = page.url.lower()
-                    if "checkout" not in current_url and "cart" not in current_url:
-                        # Tenta encontrar link de checkout na pagina
-                        try:
-                            checkout_link = page.locator('a[href*="checkout"]').first
-                            if await checkout_link.is_visible(timeout=2000):
-                                await checkout_link.click()
-                                session.add_log("Link de checkout encontrado e clicado!", "success")
-                                await asyncio.sleep(2.0)
-                                await page.wait_for_load_state("networkidle", timeout=30000)
-                        except Exception:
-                            pass
-                
+                            try:
+                                await page.goto(f"{origin}{pth}", wait_until="networkidle", timeout=45000)
+                                await asyncio.sleep(random.uniform(0.8, 1.5))
+                                if _is_cart_like(page.url):
+                                    moved_to_checkout = True
+                                    session.add_log(f"Navegacao fallback para checkout: {pth}", "info")
+                                    break
+                            except Exception:
+                                continue
+
                 session.add_log(f"URL intermediaria: {page.url[:100]}", "info")
-                
-                # ═══ ESPERA PELO REDIRECT ZEDY ═══
-                # WooCommerce /finalizar-compra/ tem um bridge script que redireciona
-                # para seguro.*.com/checkout/Z-* (checkout Zedy externo)
-                # Precisamos ESPERAR esse redirect antes de iniciar preenchimento
+
+                # ═══ ESPERA PELO REDIRECT ZEDY (obrigatório no modo produto) ═══
                 current_url_check = page.url.lower()
-                is_woocommerce = any(kw in current_url_check for kw in [
-                    "finalizar-compra", "finalizar_compra", "wc-checkout",
-                    "/checkout/" if "seguro." not in current_url_check else "SKIP"
-                ])
-                is_zedy_checkout = "seguro." in current_url_check and "/checkout/z-" in current_url_check
-                
-                if is_woocommerce and not is_zedy_checkout:
-                    session.add_log("⏳ WooCommerce detectado — aguardando redirect para Zedy checkout...", "info")
-                    
+                is_woo_or_bridge = _is_woo_bridge(current_url_check)
+                is_zedy_checkout = _is_zedy_checkout(current_url_check)
+
+                if is_woo_or_bridge and not is_zedy_checkout:
+                    session.add_log("⏳ WooCommerce/bridge detectado — aguardando redirect para Zedy checkout...", "info")
+
                     zedy_redirected = False
-                    for wait_i in range(30):  # Até 60 segundos
+                    for wait_i in range(40):  # até 80s
                         await asyncio.sleep(2.0)
                         new_url = page.url.lower()
-                        if "seguro." in new_url and "/checkout/z-" in new_url:
+
+                        if _is_zedy_checkout(new_url):
                             zedy_redirected = True
                             session.add_log(f"✅ Zedy checkout carregado: {page.url[:100]}", "success")
                             break
-                        # Tenta clicar em botões que possam avançar o WooCommerce pro Zedy
-                        if wait_i == 5:
-                            # Tenta botão "Finalizar pedido" / "Finalizar compra" do WooCommerce
+
+                        # A cada ~12s, tenta acionar botão de ponte WooCommerce
+                        if wait_i in (5, 11, 17, 23, 29, 35):
                             woo_btns = [
+                                '#place_order',
+                                'button[name="woocommerce_checkout_place_order"]',
                                 'button:has-text("Finalizar pedido")',
                                 'button:has-text("FINALIZAR PEDIDO")',
                                 'button:has-text("Finalizar compra")',
                                 'button:has-text("FINALIZAR COMPRA")',
-                                '#place_order',
-                                'button[name="woocommerce_checkout_place_order"]',
+                                'a[href*="finalizar-compra"]',
+                                'a[href*="checkout"]',
                             ]
-                            for wsel in woo_btns:
-                                try:
-                                    wel = page.locator(wsel).first
-                                    if await wel.is_visible(timeout=1000):
-                                        await wel.click()
-                                        session.add_log(f"🔄 Botao WooCommerce clicado: {wsel}", "info")
-                                        break
-                                except Exception:
-                                    continue
+                            await _click_first_visible(woo_btns, "Bridge WooCommerce", allow_force=False)
+
                         if wait_i % 10 == 9:
-                            session.add_log(f"⏳ Ainda aguardando redirect Zedy... ({(wait_i+1)*2}s)", "info")
-                    
+                            session.add_log(f"⏳ Ainda aguardando redirect Zedy... ({(wait_i + 1) * 2}s)", "info")
+
                     if not zedy_redirected:
-                        session.add_log("⚠️ Timeout esperando redirect Zedy — tentando continuar com URL atual", "error")
-                    
-                    await asyncio.sleep(random.uniform(1.5, 3.0))
-                    await page.wait_for_load_state("networkidle", timeout=15000)
-                
+                        session.add_log("❌ Nao entrou no checkout Zedy a partir do link do produto.", "error")
+                        session.failures += 1
+                        return False
+
+                    await asyncio.sleep(random.uniform(1.0, 2.0))
+                    try:
+                        await page.wait_for_load_state("networkidle", timeout=15000)
+                    except Exception:
+                        pass
+
+                # Guarda final: nunca iniciar preenchimento fora do checkout Zedy no modo produto
+                if not _is_zedy_checkout(page.url):
+                    session.add_log(f"❌ Fluxo bloqueado: URL final nao e Zedy checkout ({page.url[:120]})", "error")
+                    session.failures += 1
+                    return False
+
                 session.add_log(f"Checkout URL final: {page.url[:100]}", "info")
                 await asyncio.sleep(random.uniform(1.0, 2.0))
 

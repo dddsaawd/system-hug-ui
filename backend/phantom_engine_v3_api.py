@@ -2119,7 +2119,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 if not any_action:
                     stale_count += 1
                     session.add_log(f"  Sem acao possivel (stale #{stale_count})", "info")
-                    if stale_count >= 6:
+                    if stale_count >= 4:
                         session.add_log("  Sem progresso. Encerrando.", "error")
                         break
                     # Scroll down para revelar campos escondidos

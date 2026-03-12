@@ -1111,11 +1111,11 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                     continue
                                 if await el.is_visible(timeout=800):
                                     try:
-                                        await el.scroll_into_view_if_needed(timeout=2500)
-                                    except Exception:
-                                        pass
-                                    await asyncio.sleep(random.uniform(0.08, 0.2))
-                                    await el.click(timeout=7000, force=force_click)
+                                    await el.scroll_into_view_if_needed(timeout=1500)
+                                except Exception:
+                                    pass
+                                await asyncio.sleep(0.05)
+                                await el.click(timeout=3000, force=force_click)
                                     forced = " (force)" if force_click else ""
                                     session.add_log(f"{log_prefix} clicado: {sel}{forced}", "success")
                                     return True

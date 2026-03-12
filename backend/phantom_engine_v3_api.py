@@ -1743,9 +1743,9 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                 fallback_el = page.locator(f'[name="{field_info["name"]}"]').first
                             if fallback_el:
                                 try:
-                                    await fallback_el.scroll_into_view_if_needed(timeout=1000)
-                                    await asyncio.sleep(0.2)
-                                    if await fallback_el.is_visible(timeout=500):
+                                    await fallback_el.scroll_into_view_if_needed(timeout=500)
+                                    await asyncio.sleep(0.1)
+                                    if await fallback_el.is_visible(timeout=300):
                                         el = fallback_el
                                         session.add_log(f"  ✅ {label} encontrado via fallback!", "info")
                                     else:

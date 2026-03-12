@@ -2140,7 +2140,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     session.add_log(f"  Navegou: {current_url[:80]}", "info")
                     last_url = current_url
                     try:
-                        await page.wait_for_load_state("networkidle", timeout=15000)
+                        await page.wait_for_load_state("networkidle", timeout=5000)
                     except Exception:
                         await asyncio.sleep(2.0)
 

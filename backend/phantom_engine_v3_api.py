@@ -420,7 +420,7 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
         for i in range(min(count, 10)):
             btn = all_btns.nth(i)
             try:
-                if await btn.is_visible(timeout=200):
+                if await btn.is_visible(timeout=150):
                     txt = (await btn.text_content() or "").strip()[:30]
                     if txt:
                         visible_texts.append(txt)

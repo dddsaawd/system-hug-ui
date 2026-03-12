@@ -1287,7 +1287,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     return False
 
                 session.add_log(f"Checkout URL final: {page.url[:100]}", "info")
-                await asyncio.sleep(random.uniform(1.0, 2.0))
+                await asyncio.sleep(random.uniform(0.3, 0.8))
 
             addr = get_random_address()
             cpf_digits = user_data["cpf"].replace(".", "").replace("-", "").replace(" ", "")

@@ -281,11 +281,10 @@ async def smart_fill_field_by_label(page, label_texts: list[str], value: str, fi
                     session.add_log(f"  {field_name}: ja preenchido = '{current_val[:30]}'", "info")
                     return True
                 await field.click()
-                await asyncio.sleep(random.uniform(0.05, 0.15))
+                await asyncio.sleep(0.05)
                 await field.fill("")
-                await asyncio.sleep(random.uniform(0.03, 0.08))
                 await field.fill(value)
-                await asyncio.sleep(random.uniform(0.1, 0.25))
+                await asyncio.sleep(0.05)
                 display = value[:30] + "..." if len(value) > 30 else value
                 session.add_log(f"  {field_name} (label): {display}", "info")
                 return True

@@ -1551,7 +1551,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 session.add_log("  🏠 CEP preenchido — aguardando expansão de endereço...", "info")
                 
                 # Aguarda até 8s para campos de endereço aparecerem
-                for attempt in range(8):
+                for attempt in range(4):  # máx 4s
                     await asyncio.sleep(1.0)
                     try:
                         new_fields = await page.evaluate(EXTRACT_FIELDS_JS)

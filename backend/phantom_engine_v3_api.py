@@ -1732,7 +1732,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                         except Exception:
                             pass
                         
-                        if not await el.is_visible(timeout=1000):
+                        if not await el.is_visible(timeout=500):
                             label = FIELD_LABELS.get(field_type, field_type)
                             session.add_log(f"  ⚠️ {label} detectado mas não visível — tentando por ID/name...", "info")
                             # Fallback: tenta localizar por id ou name

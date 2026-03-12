@@ -1060,8 +1060,23 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 page.on("response", on_response)
 
             # Navega para o checkout (ou produto -> carrinho -> checkout)
+            async def _safe_goto(url: str, timeout_ms: int = 60000) -> None:
+                """Navegação resiliente para lojas com requests long-lived (evita travar em networkidle)."""
+                try:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                except Exception as nav_err:
+                    session.add_log(f"⚠️ goto domcontentloaded falhou: {str(nav_err)[:90]}", "info")
+                    # Fallback: aceita o primeiro commit da navegação (menos rígido)
+                    await page.goto(url, wait_until="commit", timeout=min(timeout_ms, 45000))
+
+                # Aguarda render essencial sem depender de network idle
+                try:
+                    await page.wait_for_load_state("load", timeout=12000)
+                except Exception:
+                    pass
+
             session.add_log(f"Navegando: {session.payload.target_url}", "info")
-            await page.goto(session.payload.target_url, wait_until="networkidle", timeout=60000)
+            await _safe_goto(session.payload.target_url, timeout_ms=60000)
             await asyncio.sleep(random.uniform(2.0, 3.5))
 
             # ═══ PRE-CHECKOUT: Produto → Carrinho → Checkout Zedy ═══

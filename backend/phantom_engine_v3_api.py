@@ -246,18 +246,17 @@ async def smart_fill_field(page, selectors: list[str], value: str, field_name: s
     for selector in selectors:
         try:
             field = page.locator(selector).first
-            if await field.is_visible(timeout=500):
+            if await field.is_visible(timeout=300):
                 # Verifica se o campo ja tem valor (auto-preenchido pelo CEP)
                 current_val = await field.input_value() if await field.count() > 0 else ""
                 if current_val and len(current_val.strip()) > 2 and field_name in ("Rua", "Bairro", "Cidade", "Estado"):
                     session.add_log(f"  {field_name}: ja preenchido = '{current_val[:30]}'", "info")
                     return True
                 await field.click()
-                await asyncio.sleep(random.uniform(0.05, 0.15))
+                await asyncio.sleep(0.05)
                 await field.fill("")
-                await asyncio.sleep(random.uniform(0.03, 0.08))
                 await field.fill(value)
-                await asyncio.sleep(random.uniform(0.1, 0.25))
+                await asyncio.sleep(0.05)
                 display = value[:30] + "..." if len(value) > 30 else value
                 session.add_log(f"  {field_name}: {display}", "info")
                 return True
@@ -272,7 +271,7 @@ async def smart_fill_field_by_label(page, label_texts: list[str], value: str, fi
         try:
             # Busca input proximo a um label com o texto
             field = page.get_by_label(label_text, exact=False).first
-            if await field.is_visible(timeout=500):
+            if await field.is_visible(timeout=300):
                 current_val = ""
                 try:
                     current_val = await field.input_value()
@@ -282,11 +281,10 @@ async def smart_fill_field_by_label(page, label_texts: list[str], value: str, fi
                     session.add_log(f"  {field_name}: ja preenchido = '{current_val[:30]}'", "info")
                     return True
                 await field.click()
-                await asyncio.sleep(random.uniform(0.05, 0.15))
+                await asyncio.sleep(0.05)
                 await field.fill("")
-                await asyncio.sleep(random.uniform(0.03, 0.08))
                 await field.fill(value)
-                await asyncio.sleep(random.uniform(0.1, 0.25))
+                await asyncio.sleep(0.05)
                 display = value[:30] + "..." if len(value) > 30 else value
                 session.add_log(f"  {field_name} (label): {display}", "info")
                 return True
@@ -328,13 +326,13 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
     for text in button_texts:
         try:
             btn = page.get_by_role("button", name=text, exact=False).first
-            if await btn.is_visible(timeout=300):
+            if await btn.is_visible(timeout=200):
                 btn_text = (await btn.text_content() or "").strip().lower()
                 if any(w in btn_text for w in ["voltar", "back", "cancelar", "editar"]):
                     continue
                 await btn.scroll_into_view_if_needed()
-                await asyncio.sleep(random.uniform(0.1, 0.25))
-                await btn.click(timeout=5000)
+                await asyncio.sleep(0.1)
+                await btn.click(timeout=3000)
                 session.add_log(f"  Botao '{text}' clicado!", "success")
                 return True
         except Exception:
@@ -345,7 +343,7 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
         for tag in ["button", "a", "div[role='button']", "span[role='button']", "div", "span"]:
             try:
                 el = page.locator(f'{tag}:has-text("{text}")').first
-                if await el.is_visible(timeout=300):
+            if await el.is_visible(timeout=200):
                     el_text = (await el.text_content() or "").strip().lower()
                     if any(w in el_text for w in ["voltar", "back", "cancelar", "editar"]):
                         continue
@@ -353,8 +351,8 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
                     if tag in ("div", "span") and len(el_text) > 60:
                         continue
                     await el.scroll_into_view_if_needed()
-                    await asyncio.sleep(random.uniform(0.1, 0.25))
-                    await el.click(timeout=5000)
+                    await asyncio.sleep(0.1)
+                    await el.click(timeout=3000)
                     session.add_log(f"  Botao <{tag}> '{text}' clicado!", "success")
                     return True
             except Exception:
@@ -366,11 +364,11 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
         count = await submit_btns.count()
         for i in range(count):
             btn = submit_btns.nth(i)
-            if await btn.is_visible(timeout=500):
+            if await btn.is_visible(timeout=300):
                 btn_text = (await btn.text_content() or "").strip()
                 if btn_text and not any(w in btn_text.lower() for w in ["voltar", "back", "cancelar"]):
                     await btn.scroll_into_view_if_needed()
-                    await asyncio.sleep(random.uniform(0.1, 0.25))
+                    await asyncio.sleep(0.1)
                     await btn.click(timeout=5000)
                     session.add_log(f"  Submit '{btn_text[:40]}' clicado!", "success")
                     return True
@@ -384,13 +382,13 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
         skip_words = ["voltar", "back", "cancelar", "fechar", "close", "editar", "edit", "adicionar", "add", "remover", "remove", "cupom", "coupon"]
         for i in range(count):
             btn = all_btns.nth(i)
-            if await btn.is_visible(timeout=300):
+            if await btn.is_visible(timeout=200):
                 btn_text = (await btn.text_content() or "").strip()
                 if btn_text and len(btn_text) > 2:
                     if not any(w in btn_text.lower() for w in skip_words):
                         await btn.scroll_into_view_if_needed()
-                        await asyncio.sleep(random.uniform(0.1, 0.25))
-                        await btn.click(timeout=5000)
+                        await asyncio.sleep(0.1)
+                        await btn.click(timeout=3000)
                         session.add_log(f"  Fallback '{btn_text[:40]}' clicado!", "success")
                         return True
     except Exception:
@@ -403,12 +401,12 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
     for text in priority_texts:
         try:
             el = page.get_by_text(text, exact=False).first
-            if await el.is_visible(timeout=300):
+            if await el.is_visible(timeout=200):
                 el_text = (await el.text_content() or "").strip()
-                if len(el_text) < 60:  # Não clica em containers grandes
+                if len(el_text) < 60:
                     await el.scroll_into_view_if_needed()
-                    await asyncio.sleep(random.uniform(0.1, 0.25))
-                    await el.click(timeout=5000)
+                    await asyncio.sleep(0.1)
+                    await el.click(timeout=3000)
                     session.add_log(f"  Botao (text) '{el_text[:40]}' clicado!", "success")
                     return True
         except Exception:
@@ -422,7 +420,7 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
         for i in range(min(count, 10)):
             btn = all_btns.nth(i)
             try:
-                if await btn.is_visible(timeout=200):
+                if await btn.is_visible(timeout=150):
                     txt = (await btn.text_content() or "").strip()[:30]
                     if txt:
                         visible_texts.append(txt)
@@ -454,23 +452,23 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
 async def smart_select_country_brazil(page, session: EngineSession) -> bool:
     """Tenta selecionar Brasil (+55) no seletor de pais."""
     try:
-        country_btn = page.locator('button[role="combobox"]').first
-        if await country_btn.is_visible(timeout=2000):
+        country_btn = page.locator('button[role="combobox"]').first  
+        if await country_btn.is_visible(timeout=800):
             current_text = (await country_btn.text_content()) or ""
             if "+55" in current_text or "Brasil" in current_text:
                 session.add_log("  Pais Brasil (+55) ja selecionado", "info")
                 return True
             await country_btn.click()
-            await asyncio.sleep(random.uniform(0.3, 0.6))
+            await asyncio.sleep(0.2)
             for sel in ['button:has-text("Brasil")', 'button:has-text("Brazil")',
                         '[data-country="BR"]', 'li:has-text("Brasil")',
                         'option:has-text("Brasil")', 'div:has-text("+55")']:
                 try:
                     brasil = page.locator(sel).first
-                    if await brasil.is_visible(timeout=1500):
+                    if await brasil.is_visible(timeout=800):
                         await brasil.click()
                         session.add_log("  Pais Brasil (+55) selecionado!", "info")
-                        await asyncio.sleep(random.uniform(0.2, 0.4))
+                        await asyncio.sleep(0.15)
                         return True
                 except Exception:
                     continue
@@ -493,8 +491,7 @@ async def select_pix_payment(page, session: EngineSession) -> bool:
     for sel in pix_selectors:
         try:
             el = page.locator(sel).first
-            if await el.is_visible(timeout=1500):
-                # Verifica se ja esta selecionado
+            if await el.is_visible(timeout=800):
                 try:
                     is_checked = await el.locator('input[type="radio"]').first.is_checked()
                     if is_checked:
@@ -504,7 +501,7 @@ async def select_pix_payment(page, session: EngineSession) -> bool:
                     pass
                 await el.click()
                 session.add_log("  Metodo PIX selecionado!", "success")
-                await asyncio.sleep(random.uniform(0.3, 0.6))
+                await asyncio.sleep(0.15)
                 return True
         except Exception:
             continue
@@ -524,10 +521,10 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
     for sel in radio_selectors:
         try:
             el = page.locator(sel).first
-            if await el.is_visible(timeout=1000):
+            if await el.is_visible(timeout=500):
                 await el.click()
                 session.add_log(f"  Frete radio clicado: {sel}", "success")
-                await asyncio.sleep(random.uniform(0.3, 0.6))
+                await asyncio.sleep(0.15)
                 return True
         except Exception:
             continue
@@ -542,13 +539,13 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
     for sel in frete_labels:
         try:
             el = page.locator(sel).first
-            if await el.is_visible(timeout=1000):
+            if await el.is_visible(timeout=500):
                 text = (await el.text_content() or "")[:50]
                 if "pagamento" in text.lower() or "seguro" in text.lower():
                     continue
                 await el.click()
                 session.add_log(f"  Frete selecionado: {text}", "success")
-                await asyncio.sleep(random.uniform(0.3, 0.6))
+                await asyncio.sleep(0.15)
                 return True
         except Exception:
             continue
@@ -641,12 +638,12 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
                 click_text = carrier_match.group(0) if carrier_match else card_text[:40].strip()
                 
                 el = page.get_by_text(click_text, exact=False).first
-                if await el.is_visible(timeout=2000):
+                if await el.is_visible(timeout=1000):
                     await el.scroll_into_view_if_needed()
-                    await asyncio.sleep(random.uniform(0.2, 0.4))
+                    await asyncio.sleep(0.1)
                     await el.click()
                     session.add_log(f"  ✅ Frete card clicado: {click_text}", "success")
-                    await asyncio.sleep(random.uniform(0.5, 1.0))
+                    await asyncio.sleep(0.3)
                     clicked = True
             except Exception:
                 pass
@@ -658,7 +655,7 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
                     y = best['top'] + best.get('height', 40) / 2
                     await page.mouse.click(x + 20, y)
                     session.add_log(f"  ✅ Frete card clicado via coordenadas: {best['text'][:50]}", "success")
-                    await asyncio.sleep(random.uniform(0.5, 1.0))
+                    await asyncio.sleep(0.3)
                     clicked = True
                 except Exception as e:
                     session.add_log(f"  ❌ Erro clicando frete card: {str(e)[:40]}", "error")
@@ -681,7 +678,7 @@ async def select_state_dropdown(page, estado: str, session: EngineSession) -> bo
     for sel in select_selectors:
         try:
             dropdown = page.locator(sel).first
-            if await dropdown.is_visible(timeout=1500):
+            if await dropdown.is_visible(timeout=500):
                 await dropdown.select_option(value=estado)
                 session.add_log(f"  Estado (select): {estado}", "info")
                 return True
@@ -689,7 +686,7 @@ async def select_state_dropdown(page, estado: str, session: EngineSession) -> bo
             pass
         try:
             dropdown = page.locator(sel).first
-            if await dropdown.is_visible(timeout=500):
+            if await dropdown.is_visible(timeout=300):
                 await dropdown.select_option(label=estado)
                 session.add_log(f"  Estado (select label): {estado}", "info")
                 return True
@@ -775,7 +772,7 @@ async def check_success(page, session: EngineSession) -> bool:
     for sel in sucesso_selectors:
         try:
             el = page.locator(sel).first
-            if await el.is_visible(timeout=1000):
+            if await el.is_visible(timeout=500):
                 session.add_log(f"VENDA GERADA! Indicador: {sel[:50]}", "success")
                 return True
         except Exception:
@@ -911,7 +908,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             headless=True,
                             args=launch_args,
                             proxy=launch_proxy,
-                            timeout=60000,
+                            timeout=30000,
                         )
                         break
                     except Exception as launch_err:
@@ -1071,13 +1068,13 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
 
                 # Aguarda render essencial sem depender de network idle
                 try:
-                    await page.wait_for_load_state("load", timeout=12000)
+                    await page.wait_for_load_state("load", timeout=6000)
                 except Exception:
                     pass
 
             session.add_log(f"Navegando: {session.payload.target_url}", "info")
-            await _safe_goto(session.payload.target_url, timeout_ms=60000)
-            await asyncio.sleep(random.uniform(2.0, 3.5))
+            await _safe_goto(session.payload.target_url, timeout_ms=30000)
+            await asyncio.sleep(random.uniform(0.5, 1.0))
 
             # ═══ PRE-CHECKOUT: Produto → Carrinho → Checkout Zedy ═══
             target_url_l = (session.payload.target_url or "").lower()
@@ -1112,13 +1109,13 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                 el = page.locator(sel).first
                                 if await el.count() == 0:
                                     continue
-                                if await el.is_visible(timeout=1800):
+                                if await el.is_visible(timeout=800):
                                     try:
-                                        await el.scroll_into_view_if_needed(timeout=2500)
-                                    except Exception:
-                                        pass
-                                    await asyncio.sleep(random.uniform(0.08, 0.2))
-                                    await el.click(timeout=7000, force=force_click)
+                                    await el.scroll_into_view_if_needed(timeout=1500)
+                                except Exception:
+                                    pass
+                                await asyncio.sleep(0.05)
+                                await el.click(timeout=3000, force=force_click)
                                     forced = " (force)" if force_click else ""
                                     session.add_log(f"{log_prefix} clicado: {sel}{forced}", "success")
                                     return True
@@ -1179,9 +1176,9 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     session.failures += 1
                     return False
 
-                await asyncio.sleep(random.uniform(1.6, 2.8))
+                await asyncio.sleep(random.uniform(0.5, 1.0))
                 try:
-                    await page.wait_for_load_state("networkidle", timeout=12000)
+                    await page.wait_for_load_state("networkidle", timeout=5000)
                 except Exception:
                     pass
 
@@ -1212,7 +1209,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     if not moved_to_checkout:
                         opened_cart = await _click_first_visible(minicart_open_selectors, "Mini-carrinho")
                         if opened_cart:
-                            await asyncio.sleep(random.uniform(0.8, 1.4))
+                            await asyncio.sleep(random.uniform(0.3, 0.6))
                             moved_to_checkout = await _click_first_visible(checkout_from_product_selectors, "Checkout no mini-carrinho")
 
                     if not moved_to_checkout:
@@ -1226,8 +1223,8 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             if not origin:
                                 break
                             try:
-                                await _safe_goto(f"{origin}{pth}", timeout_ms=45000)
-                                await asyncio.sleep(random.uniform(0.8, 1.5))
+                            await _safe_goto(f"{origin}{pth}", timeout_ms=20000)
+                                await asyncio.sleep(random.uniform(0.3, 0.6))
                                 if _is_cart_like(page.url):
                                     moved_to_checkout = True
                                     session.add_log(f"Navegacao fallback para checkout: {pth}", "info")
@@ -1246,7 +1243,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     session.add_log("⏳ WooCommerce/bridge detectado — aguardando redirect para Zedy checkout...", "info")
 
                     zedy_redirected = False
-                    for wait_i in range(40):  # até 80s
+                    for wait_i in range(15):  # até 30s (reduzido de 80s)
                         await asyncio.sleep(2.0)
                         new_url = page.url.lower()
 
@@ -1256,7 +1253,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             break
 
                         # A cada ~12s, tenta acionar botão de ponte WooCommerce
-                        if wait_i in (5, 11, 17, 23, 29, 35):
+                        if wait_i in (4, 8, 12):
                             woo_btns = [
                                 '#place_order',
                                 'button[name="woocommerce_checkout_place_order"]',
@@ -1277,9 +1274,9 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                         session.failures += 1
                         return False
 
-                    await asyncio.sleep(random.uniform(1.0, 2.0))
+                    await asyncio.sleep(random.uniform(0.3, 0.8))
                     try:
-                        await page.wait_for_load_state("networkidle", timeout=15000)
+                        await page.wait_for_load_state("networkidle", timeout=5000)
                     except Exception:
                         pass
 
@@ -1290,7 +1287,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     return False
 
                 session.add_log(f"Checkout URL final: {page.url[:100]}", "info")
-                await asyncio.sleep(random.uniform(1.0, 2.0))
+                await asyncio.sleep(random.uniform(0.3, 0.8))
 
             addr = get_random_address()
             cpf_digits = user_data["cpf"].replace(".", "").replace("-", "").replace(" ", "")
@@ -1544,7 +1541,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
 
             SKIP_IF_FILLED = {'rua', 'bairro', 'cidade', 'estado'}
             OPTIONAL_FIELDS = {'complemento'}
-            POST_FILL_DELAY = {'cep': 5.0}  # campos que precisam de delay após preenchimento (CEP → auto-complete endereço)
+            POST_FILL_DELAY = {'cep': 2.0}  # delay CEP reduzido para velocidade
 
             async def wait_for_address_expansion_after_cep(filled: dict) -> dict:
                 """Após preencher CEP, aguarda a expansão dos campos de endereço e preenche-os."""
@@ -1554,7 +1551,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 session.add_log("  🏠 CEP preenchido — aguardando expansão de endereço...", "info")
                 
                 # Aguarda até 8s para campos de endereço aparecerem
-                for attempt in range(8):
+                for attempt in range(4):  # máx 4s
                     await asyncio.sleep(1.0)
                     try:
                         new_fields = await page.evaluate(EXTRACT_FIELDS_JS)
@@ -1628,11 +1625,10 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                     if not await el.is_visible(timeout=500):
                                         continue
                                     await el.click()
-                                    await asyncio.sleep(random.uniform(0.05, 0.15))
+                                    await asyncio.sleep(0.05)
                                     await el.fill("")
-                                    await asyncio.sleep(random.uniform(0.03, 0.08))
                                     await el.fill(value)
-                                    await asyncio.sleep(random.uniform(0.1, 0.25))
+                                    await asyncio.sleep(0.05)
                                     label = FIELD_LABELS.get(field_type, field_type)
                                     session.add_log(f"  {label}: {value[:25]} (score:{confidence})", "info")
                                     filled[field_type] = True
@@ -1731,12 +1727,12 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                         
                         # Scroll ao campo antes de checar visibilidade
                         try:
-                            await el.scroll_into_view_if_needed(timeout=2000)
-                            await asyncio.sleep(0.3)
+                            await el.scroll_into_view_if_needed(timeout=1000)
+                            await asyncio.sleep(0.1)
                         except Exception:
                             pass
                         
-                        if not await el.is_visible(timeout=1000):
+                        if not await el.is_visible(timeout=500):
                             label = FIELD_LABELS.get(field_type, field_type)
                             session.add_log(f"  ⚠️ {label} detectado mas não visível — tentando por ID/name...", "info")
                             # Fallback: tenta localizar por id ou name
@@ -1747,9 +1743,9 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                 fallback_el = page.locator(f'[name="{field_info["name"]}"]').first
                             if fallback_el:
                                 try:
-                                    await fallback_el.scroll_into_view_if_needed(timeout=1000)
-                                    await asyncio.sleep(0.2)
-                                    if await fallback_el.is_visible(timeout=500):
+                                    await fallback_el.scroll_into_view_if_needed(timeout=500)
+                                    await asyncio.sleep(0.1)
+                                    if await fallback_el.is_visible(timeout=300):
                                         el = fallback_el
                                         session.add_log(f"  ✅ {label} encontrado via fallback!", "info")
                                     else:
@@ -1760,11 +1756,10 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                 continue
 
                         await el.click()
-                        await asyncio.sleep(random.uniform(0.05, 0.15))
+                        await asyncio.sleep(0.05)
                         await el.fill("")
-                        await asyncio.sleep(random.uniform(0.03, 0.08))
                         await el.fill(value)
-                        await asyncio.sleep(random.uniform(0.1, 0.25))
+                        await asyncio.sleep(0.05)
                         
                         # CRÍTICO: Usa React native setter para forçar atualização de estado
                         try:
@@ -1797,9 +1792,9 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             # Tab out para disparar lookup + blur
                             try:
                                 await page.keyboard.press("Tab")
-                                await asyncio.sleep(0.3)
+                                await asyncio.sleep(0.15)
                                 await page.click("body", position={"x": 10, "y": 10})
-                                await asyncio.sleep(0.5)
+                                await asyncio.sleep(0.2)
                             except Exception:
                                 pass
                             await asyncio.sleep(POST_FILL_DELAY[field_type])
@@ -1817,7 +1812,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                         await page.keyboard.type(char, delay=50)
                                     await asyncio.sleep(0.3)
                                     await page.keyboard.press("Tab")
-                                    await asyncio.sleep(5.0)
+                                    await asyncio.sleep(2.0)
                                 else:
                                     session.add_log(f"  ✅ CEP expandiu {addr_found} campos de endereço!", "success")
                             except Exception:
@@ -1835,7 +1830,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             cep_el = page.locator('#zipcode, [id*="cep"], [id*="zip"], [name*="cep"], [name*="zip"]').first
                             await cep_el.scroll_into_view_if_needed(timeout=2000)
                             await asyncio.sleep(0.3)
-                            if await cep_el.is_visible(timeout=1000):
+                            if await cep_el.is_visible(timeout=500):
                                 await cep_el.click()
                                 await asyncio.sleep(0.1)
                                 await cep_el.fill("")
@@ -1847,7 +1842,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                 await page.keyboard.press("Tab")
                                 session.add_log(f"  CEP: {cep_value} (fallback direto)", "info")
                                 filled['cep'] = True
-                                await asyncio.sleep(5.0)  # aguarda expansão
+                                await asyncio.sleep(2.0)  # aguarda expansão (reduzido)
                         except Exception as e:
                             session.add_log(f"  Fallback CEP falhou: {str(e)[:40]}", "error")
 
@@ -1926,10 +1921,10 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 for sel in close_selectors:
                     try:
                         el = page.locator(sel).first
-                        if await el.is_visible(timeout=300):
+                        if await el.is_visible(timeout=200):
                             await el.click()
-                            session.add_log(f"  Popup/modal fechado: {sel[:40]}", "info")
-                            await asyncio.sleep(0.5)
+                        session.add_log(f"  Popup/modal fechado: {sel[:40]}", "info")
+                        await asyncio.sleep(0.2)
                     except Exception:
                         continue
 
@@ -2006,12 +2001,12 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     return True
                 return False
 
-            async def wait_for_step_transition(pre_click_fp: dict, max_wait: float = 8.0) -> bool:
+            async def wait_for_step_transition(pre_click_fp: dict, max_wait: float = 4.0) -> bool:
                 """Aguarda até que o DOM mude (nova etapa) ou timeout."""
                 start = time.time()
                 checks = 0
                 while time.time() - start < max_wait:
-                    await asyncio.sleep(0.8)
+                    await asyncio.sleep(0.5)
                     checks += 1
                     post_fp = await get_dom_fingerprint()
                     if dom_changed(pre_click_fp, post_fp):
@@ -2029,7 +2024,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 return False
 
             # ─── Loop Adaptativo Principal v6.0 ───
-            max_loops = 22
+            max_loops = 15
             last_url = page.url
             stale_count = 0
             step_number = 1
@@ -2074,7 +2069,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 radios_done = await handle_interactive_elements()
 
                 # 5. Pausa humana
-                await asyncio.sleep(random.uniform(0.3, 0.8))
+                await asyncio.sleep(random.uniform(0.15, 0.3))
 
                 # 6. Decidir se deve clicar botão
                 # Só clica se: preencheu algo OU interagiu com elementos OU está preso nos mesmos campos
@@ -2095,13 +2090,21 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             consecutive_same_fields = 0
                             last_field_set = set()
                             # Espera extra para campos React/RSC renderizarem
-                            await asyncio.sleep(random.uniform(1.5, 2.5))
+                            await asyncio.sleep(random.uniform(0.5, 1.0))
                             # NÃO verificar sucesso aqui — precisa preencher CPF na etapa de pagamento primeiro
                             # O check_success roda no INÍCIO do próximo loop, após scan+fill
                             continue
                         else:
-                            # Não houve transição — pode ser validação falhando
-                            session.add_log("  ⚠️ Clicou mas não avançou — possível erro de validação", "info")
+                            # Não houve transição — captura screenshot + URL para diagnóstico
+                            session.add_log(f"  ⚠️ Clicou mas não avançou — URL: {page.url[:100]}", "info")
+                            # Screenshot para debug
+                            try:
+                                import base64 as b64
+                                screenshot_bytes = await page.screenshot(type="jpeg", quality=50, full_page=False)
+                                screenshot_b64 = b64.b64encode(screenshot_bytes).decode()[:500]
+                                session.add_log(f"  📸 Screenshot (base64 preview): {screenshot_b64[:80]}...", "info")
+                            except Exception:
+                                pass
                             # Tenta ler mensagens de erro na página
                             try:
                                 errors = await page.evaluate("""() => {
@@ -2117,14 +2120,14 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                     session.add_log(f"  ❌ Erros na página: {errors}", "error")
                             except Exception:
                                 pass
-                            await asyncio.sleep(random.uniform(1.5, 2.5))
+                            await asyncio.sleep(random.uniform(0.3, 0.6))
 
                 # 8. Detecção de progresso
                 any_action = bool(filled) or radios_done or clicked
                 if not any_action:
                     stale_count += 1
                     session.add_log(f"  Sem acao possivel (stale #{stale_count})", "info")
-                    if stale_count >= 6:
+                    if stale_count >= 4:
                         session.add_log("  Sem progresso. Encerrando.", "error")
                         break
                     # Scroll down para revelar campos escondidos
@@ -2134,7 +2137,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             session.add_log("  📜 Scroll para revelar campos...", "info")
                         except Exception:
                             pass
-                    await asyncio.sleep(2.0)
+                    await asyncio.sleep(0.5)
                     continue
                 else:
                     stale_count = 0
@@ -2145,9 +2148,9 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     session.add_log(f"  Navegou: {current_url[:80]}", "info")
                     last_url = current_url
                     try:
-                        await page.wait_for_load_state("networkidle", timeout=15000)
+                        await page.wait_for_load_state("networkidle", timeout=5000)
                     except Exception:
-                        await asyncio.sleep(2.0)
+                        await asyncio.sleep(0.5)
 
                 # 10. Verificar sucesso pós-ação
                 if await check_success(page, session):
@@ -2157,11 +2160,11 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
 
                 # 11. Aguardar entre scans (menor se não clicou)
                 if not clicked:
-                    await asyncio.sleep(random.uniform(0.5, 1.5))
+                    await asyncio.sleep(random.uniform(0.2, 0.5))
 
             # ═══ FIM DO LOOP ═══
             session.add_log("Verificacao final...", "info")
-            await asyncio.sleep(3.0)
+            await asyncio.sleep(1.0)
             if await check_success(page, session):
                 session.successes += 1
                 return True
@@ -2415,7 +2418,7 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
             is_html = resp_init.text.strip().startswith("<!DOCTYPE") or resp_init.text.strip().startswith("<html")
             session.add_log(f"   Cart init: {resp_init.status_code} {'⚠️ HTML (sem action ID?)' if is_html else '✅ RSC'}", "info" if not is_html else "error")
             
-            await asyncio.sleep(random.uniform(0.3, 0.8))
+            await asyncio.sleep(random.uniform(0.1, 0.3))
             
             # ═══ PASSO 1.6: Disparar tracking (InitiateCheckout + PageView) ═══
             # Replicar os eventos de tracking para autenticidade da sessão
@@ -2431,7 +2434,7 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
             except Exception:
                 pass  # tracking falhar não é crítico
             
-            await asyncio.sleep(random.uniform(0.5, 1.0))
+            await asyncio.sleep(random.uniform(0.2, 0.5))
             
             # ═══ PASSO 2: Server Action — submeter dados pessoais ═══
             # Payload capturado: [storeId, checkoutId, {email, name, phone}]
@@ -2461,7 +2464,7 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
             except Exception:
                 pass
             
-            await asyncio.sleep(random.uniform(0.5, 1.5))
+            await asyncio.sleep(random.uniform(0.2, 0.5))
             
             # ═══ PASSO 3: Server Action — CEP + endereço (SEM CPF — CPF vai no pagamento) ═══
             # Confirmado via screenshots: CPF aparece na etapa 3 "Opção de pagamento", não na etapa 2 "Entrega"
@@ -2497,7 +2500,7 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
                 if not shipping_methods:
                     shipping_methods = re.findall(r'"id"\s*:\s*"?(\d+)"?', resp2_text)
                 
-                await asyncio.sleep(random.uniform(0.5, 1.5))
+                await asyncio.sleep(random.uniform(0.2, 0.5))
             
             # ═══ PASSO 4: Server Action — selecionar frete ═══
             session.add_log("📤 Selecionando frete...", "info")
@@ -2517,7 +2520,7 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
             resp3 = await client.post(checkout_url, content=shipping_payload, headers=headers_sa3)
             session.add_log(f"   Resposta frete: {resp3.status_code}", "info" if resp3.status_code == 200 else "error")
             
-            await asyncio.sleep(random.uniform(0.5, 1.5))
+            await asyncio.sleep(random.uniform(0.2, 0.5))
             
             # ═══ PASSO 5: Server Action — finalizar com pagamento ═══
             # O checkout internamente chama o gateway:

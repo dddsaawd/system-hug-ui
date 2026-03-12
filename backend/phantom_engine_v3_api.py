@@ -2426,7 +2426,7 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
             except Exception:
                 pass  # tracking falhar não é crítico
             
-            await asyncio.sleep(random.uniform(0.5, 1.0))
+            await asyncio.sleep(random.uniform(0.2, 0.5))
             
             # ═══ PASSO 2: Server Action — submeter dados pessoais ═══
             # Payload capturado: [storeId, checkoutId, {email, name, phone}]

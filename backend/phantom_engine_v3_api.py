@@ -1794,7 +1794,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                 await page.keyboard.press("Tab")
                                 await asyncio.sleep(0.15)
                                 await page.click("body", position={"x": 10, "y": 10})
-                                await asyncio.sleep(0.5)
+                                await asyncio.sleep(0.2)
                             except Exception:
                                 pass
                             await asyncio.sleep(POST_FILL_DELAY[field_type])

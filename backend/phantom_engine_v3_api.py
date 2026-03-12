@@ -1541,7 +1541,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
 
             SKIP_IF_FILLED = {'rua', 'bairro', 'cidade', 'estado'}
             OPTIONAL_FIELDS = {'complemento'}
-            POST_FILL_DELAY = {'cep': 5.0}  # campos que precisam de delay após preenchimento (CEP → auto-complete endereço)
+            POST_FILL_DELAY = {'cep': 2.0}  # delay CEP reduzido para velocidade
 
             async def wait_for_address_expansion_after_cep(filled: dict) -> dict:
                 """Após preencher CEP, aguarda a expansão dos campos de endereço e preenche-os."""

@@ -1243,7 +1243,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     session.add_log("⏳ WooCommerce/bridge detectado — aguardando redirect para Zedy checkout...", "info")
 
                     zedy_redirected = False
-                    for wait_i in range(40):  # até 80s
+                    for wait_i in range(15):  # até 30s (reduzido de 80s)
                         await asyncio.sleep(2.0)
                         new_url = page.url.lower()
 

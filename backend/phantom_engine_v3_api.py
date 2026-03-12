@@ -1068,7 +1068,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
 
                 # Aguarda render essencial sem depender de network idle
                 try:
-                    await page.wait_for_load_state("load", timeout=12000)
+                    await page.wait_for_load_state("load", timeout=6000)
                 except Exception:
                     pass
 

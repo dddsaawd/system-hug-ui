@@ -271,7 +271,7 @@ async def smart_fill_field_by_label(page, label_texts: list[str], value: str, fi
         try:
             # Busca input proximo a um label com o texto
             field = page.get_by_label(label_text, exact=False).first
-            if await field.is_visible(timeout=500):
+            if await field.is_visible(timeout=300):
                 current_val = ""
                 try:
                     current_val = await field.input_value()

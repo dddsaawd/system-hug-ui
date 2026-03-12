@@ -2090,7 +2090,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             consecutive_same_fields = 0
                             last_field_set = set()
                             # Espera extra para campos React/RSC renderizarem
-                            await asyncio.sleep(random.uniform(1.5, 2.5))
+                            await asyncio.sleep(random.uniform(0.5, 1.0))
                             # NÃO verificar sucesso aqui — precisa preencher CPF na etapa de pagamento primeiro
                             # O check_success roda no INÍCIO do próximo loop, após scan+fill
                             continue

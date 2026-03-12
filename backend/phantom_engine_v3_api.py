@@ -2001,7 +2001,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     return True
                 return False
 
-            async def wait_for_step_transition(pre_click_fp: dict, max_wait: float = 8.0) -> bool:
+            async def wait_for_step_transition(pre_click_fp: dict, max_wait: float = 4.0) -> bool:
                 """Aguarda até que o DOM mude (nova etapa) ou timeout."""
                 start = time.time()
                 checks = 0

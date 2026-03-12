@@ -772,7 +772,7 @@ async def check_success(page, session: EngineSession) -> bool:
     for sel in sucesso_selectors:
         try:
             el = page.locator(sel).first
-            if await el.is_visible(timeout=1000):
+            if await el.is_visible(timeout=500):
                 session.add_log(f"VENDA GERADA! Indicador: {sel[:50]}", "success")
                 return True
         except Exception:

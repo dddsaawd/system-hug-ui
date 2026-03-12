@@ -521,10 +521,10 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
     for sel in radio_selectors:
         try:
             el = page.locator(sel).first
-            if await el.is_visible(timeout=1000):
+            if await el.is_visible(timeout=500):
                 await el.click()
                 session.add_log(f"  Frete radio clicado: {sel}", "success")
-                await asyncio.sleep(random.uniform(0.3, 0.6))
+                await asyncio.sleep(0.15)
                 return True
         except Exception:
             continue

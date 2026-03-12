@@ -2142,7 +2142,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     try:
                         await page.wait_for_load_state("networkidle", timeout=5000)
                     except Exception:
-                        await asyncio.sleep(2.0)
+                        await asyncio.sleep(0.5)
 
                 # 10. Verificar sucesso pós-ação
                 if await check_success(page, session):

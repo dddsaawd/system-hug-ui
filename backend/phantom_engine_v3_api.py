@@ -2456,7 +2456,7 @@ async def run_zedy_direct_api_session(session: EngineSession, proxy: str, user_d
             except Exception:
                 pass
             
-            await asyncio.sleep(random.uniform(0.5, 1.5))
+            await asyncio.sleep(random.uniform(0.2, 0.5))
             
             # ═══ PASSO 3: Server Action — CEP + endereço (SEM CPF — CPF vai no pagamento) ═══
             # Confirmado via screenshots: CPF aparece na etapa 3 "Opção de pagamento", não na etapa 2 "Entrega"

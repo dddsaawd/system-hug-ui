@@ -1080,7 +1080,12 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
             await asyncio.sleep(random.uniform(2.0, 3.5))
 
             # ═══ PRE-CHECKOUT: Produto → Carrinho → Checkout Zedy ═══
-            if session.payload.is_product_url:
+            target_url_l = (session.payload.target_url or "").lower()
+            auto_product_mode = any(k in target_url_l for k in ["/produto/", "/product/", "?add-to-cart="])
+            product_mode = session.payload.is_product_url or auto_product_mode
+            if product_mode:
+                if auto_product_mode and not session.payload.is_product_url:
+                    session.add_log("🔁 URL de produto detectada automaticamente (is_product_url=false). Ativando modo PRODUTO.", "info")
                 session.add_log("Modo PRODUTO ativo. Buscando botao de compra...", "info")
 
                 def _is_zedy_checkout(url: str) -> bool:

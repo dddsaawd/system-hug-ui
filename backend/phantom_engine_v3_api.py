@@ -539,13 +539,13 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
     for sel in frete_labels:
         try:
             el = page.locator(sel).first
-            if await el.is_visible(timeout=1000):
+            if await el.is_visible(timeout=500):
                 text = (await el.text_content() or "")[:50]
                 if "pagamento" in text.lower() or "seguro" in text.lower():
                     continue
                 await el.click()
                 session.add_log(f"  Frete selecionado: {text}", "success")
-                await asyncio.sleep(random.uniform(0.3, 0.6))
+                await asyncio.sleep(0.15)
                 return True
         except Exception:
             continue

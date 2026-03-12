@@ -655,7 +655,7 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
                     y = best['top'] + best.get('height', 40) / 2
                     await page.mouse.click(x + 20, y)
                     session.add_log(f"  ✅ Frete card clicado via coordenadas: {best['text'][:50]}", "success")
-                    await asyncio.sleep(random.uniform(0.5, 1.0))
+                    await asyncio.sleep(0.3)
                     clicked = True
                 except Exception as e:
                     session.add_log(f"  ❌ Erro clicando frete card: {str(e)[:40]}", "error")

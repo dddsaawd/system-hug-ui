@@ -1221,7 +1221,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             if not origin:
                                 break
                             try:
-                                await page.goto(f"{origin}{pth}", wait_until="networkidle", timeout=45000)
+                                await _safe_goto(f"{origin}{pth}", timeout_ms=45000)
                                 await asyncio.sleep(random.uniform(0.8, 1.5))
                                 if _is_cart_like(page.url):
                                     moved_to_checkout = True

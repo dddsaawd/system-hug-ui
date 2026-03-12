@@ -1792,7 +1792,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             # Tab out para disparar lookup + blur
                             try:
                                 await page.keyboard.press("Tab")
-                                await asyncio.sleep(0.3)
+                                await asyncio.sleep(0.15)
                                 await page.click("body", position={"x": 10, "y": 10})
                                 await asyncio.sleep(0.5)
                             except Exception:

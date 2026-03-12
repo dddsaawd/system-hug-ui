@@ -2024,7 +2024,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 return False
 
             # ─── Loop Adaptativo Principal v6.0 ───
-            max_loops = 22
+            max_loops = 15
             last_url = page.url
             stale_count = 0
             step_number = 1

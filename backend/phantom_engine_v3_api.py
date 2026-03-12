@@ -686,7 +686,7 @@ async def select_state_dropdown(page, estado: str, session: EngineSession) -> bo
             pass
         try:
             dropdown = page.locator(sel).first
-            if await dropdown.is_visible(timeout=500):
+            if await dropdown.is_visible(timeout=300):
                 await dropdown.select_option(label=estado)
                 session.add_log(f"  Estado (select label): {estado}", "info")
                 return True

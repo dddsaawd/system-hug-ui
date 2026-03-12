@@ -2069,7 +2069,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 radios_done = await handle_interactive_elements()
 
                 # 5. Pausa humana
-                await asyncio.sleep(random.uniform(0.3, 0.8))
+                await asyncio.sleep(random.uniform(0.15, 0.3))
 
                 # 6. Decidir se deve clicar botão
                 # Só clica se: preencheu algo OU interagiu com elementos OU está preso nos mesmos campos

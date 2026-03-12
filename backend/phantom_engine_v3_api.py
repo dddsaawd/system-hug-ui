@@ -382,13 +382,13 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
         skip_words = ["voltar", "back", "cancelar", "fechar", "close", "editar", "edit", "adicionar", "add", "remover", "remove", "cupom", "coupon"]
         for i in range(count):
             btn = all_btns.nth(i)
-            if await btn.is_visible(timeout=300):
+            if await btn.is_visible(timeout=200):
                 btn_text = (await btn.text_content() or "").strip()
                 if btn_text and len(btn_text) > 2:
                     if not any(w in btn_text.lower() for w in skip_words):
                         await btn.scroll_into_view_if_needed()
-                        await asyncio.sleep(random.uniform(0.1, 0.25))
-                        await btn.click(timeout=5000)
+                        await asyncio.sleep(0.1)
+                        await btn.click(timeout=3000)
                         session.add_log(f"  Fallback '{btn_text[:40]}' clicado!", "success")
                         return True
     except Exception:

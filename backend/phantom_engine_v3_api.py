@@ -1109,7 +1109,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                 el = page.locator(sel).first
                                 if await el.count() == 0:
                                     continue
-                                if await el.is_visible(timeout=1800):
+                                if await el.is_visible(timeout=800):
                                     try:
                                         await el.scroll_into_view_if_needed(timeout=2500)
                                     except Exception:

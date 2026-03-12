@@ -459,7 +459,7 @@ async def smart_select_country_brazil(page, session: EngineSession) -> bool:
                 session.add_log("  Pais Brasil (+55) ja selecionado", "info")
                 return True
             await country_btn.click()
-            await asyncio.sleep(random.uniform(0.3, 0.6))
+            await asyncio.sleep(0.2)
             for sel in ['button:has-text("Brasil")', 'button:has-text("Brazil")',
                         '[data-country="BR"]', 'li:has-text("Brasil")',
                         'option:has-text("Brasil")', 'div:has-text("+55")']:

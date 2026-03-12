@@ -401,12 +401,12 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
     for text in priority_texts:
         try:
             el = page.get_by_text(text, exact=False).first
-            if await el.is_visible(timeout=300):
+            if await el.is_visible(timeout=200):
                 el_text = (await el.text_content() or "").strip()
-                if len(el_text) < 60:  # Não clica em containers grandes
+                if len(el_text) < 60:
                     await el.scroll_into_view_if_needed()
-                    await asyncio.sleep(random.uniform(0.1, 0.25))
-                    await el.click(timeout=5000)
+                    await asyncio.sleep(0.1)
+                    await el.click(timeout=3000)
                     session.add_log(f"  Botao (text) '{el_text[:40]}' clicado!", "success")
                     return True
         except Exception:

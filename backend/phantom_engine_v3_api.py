@@ -1921,7 +1921,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 for sel in close_selectors:
                     try:
                         el = page.locator(sel).first
-                        if await el.is_visible(timeout=300):
+                        if await el.is_visible(timeout=200):
                             await el.click()
                             session.add_log(f"  Popup/modal fechado: {sel[:40]}", "info")
                             await asyncio.sleep(0.5)

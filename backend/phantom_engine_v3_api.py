@@ -1842,7 +1842,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                 await page.keyboard.press("Tab")
                                 session.add_log(f"  CEP: {cep_value} (fallback direto)", "info")
                                 filled['cep'] = True
-                                await asyncio.sleep(5.0)  # aguarda expansão
+                                await asyncio.sleep(2.0)  # aguarda expansão (reduzido)
                         except Exception as e:
                             session.add_log(f"  Fallback CEP falhou: {str(e)[:40]}", "error")
 

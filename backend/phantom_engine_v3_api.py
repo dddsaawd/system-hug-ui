@@ -1830,7 +1830,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                             cep_el = page.locator('#zipcode, [id*="cep"], [id*="zip"], [name*="cep"], [name*="zip"]').first
                             await cep_el.scroll_into_view_if_needed(timeout=2000)
                             await asyncio.sleep(0.3)
-                            if await cep_el.is_visible(timeout=1000):
+                            if await cep_el.is_visible(timeout=500):
                                 await cep_el.click()
                                 await asyncio.sleep(0.1)
                                 await cep_el.fill("")

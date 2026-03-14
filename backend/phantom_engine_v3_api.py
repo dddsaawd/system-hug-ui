@@ -453,22 +453,19 @@ async def smart_select_country_brazil(page, session: EngineSession) -> bool:
     """Tenta selecionar Brasil (+55) no seletor de pais."""
     try:
         country_btn = page.locator('button[role="combobox"]').first  
-        if await country_btn.is_visible(timeout=800):
+        if await country_btn.is_visible(timeout=150):
             current_text = (await country_btn.text_content()) or ""
             if "+55" in current_text or "Brasil" in current_text:
-                session.add_log("  Pais Brasil (+55) ja selecionado", "info")
                 return True
             await country_btn.click()
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.15)
             for sel in ['button:has-text("Brasil")', 'button:has-text("Brazil")',
-                        '[data-country="BR"]', 'li:has-text("Brasil")',
-                        'option:has-text("Brasil")', 'div:has-text("+55")']:
+                        '[data-country="BR"]', 'li:has-text("Brasil")']:
                 try:
                     brasil = page.locator(sel).first
-                    if await brasil.is_visible(timeout=800):
+                    if await brasil.is_visible(timeout=200):
                         await brasil.click()
                         session.add_log("  Pais Brasil (+55) selecionado!", "info")
-                        await asyncio.sleep(0.15)
                         return True
                 except Exception:
                     continue

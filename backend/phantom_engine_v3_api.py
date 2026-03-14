@@ -1888,50 +1888,58 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 return did_something
 
             async def handle_popups_and_modals():
-                """Fecha popups, modais de cookie, upsells que bloqueiam o fluxo."""
-                # ─── Desmarcar checkboxes de upsell ANTES de fechar modais ───
-                upsell_checkbox_texts = [
-                    "adicionar", "chapéu", "chapeu", "oferta", "combo",
-                    "50% off", "desconto", "promoção", "promocao",
-                ]
+                """Fecha popups, modais de cookie, upsells que bloqueiam o fluxo — OTIMIZADO via JS batch."""
+                # ─── Desmarcar checkboxes de upsell via JS (batch) ───
                 try:
-                    checkboxes = page.locator('input[type="checkbox"]')
-                    cb_count = await checkboxes.count()
-                    for i in range(cb_count):
-                        cb = checkboxes.nth(i)
-                        try:
-                            if await cb.is_checked(timeout=300):
-                                # Verifica texto próximo para detectar upsell
-                                parent_text = await cb.evaluate("el => (el.closest('label, div, section') || el.parentElement)?.textContent || ''")
-                                parent_lower = parent_text.lower()[:200]
-                                if any(kw in parent_lower for kw in upsell_checkbox_texts):
-                                    await cb.uncheck()
-                                    session.add_log(f"  🚫 Upsell desmarcado: {parent_text[:50]}", "info")
-                        except Exception:
-                            continue
+                    await page.evaluate("""() => {
+                        const keywords = ['adicionar', 'chapéu', 'chapeu', 'oferta', 'combo', '50% off', 'desconto', 'promoção', 'promocao'];
+                        document.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+                            const parent = (cb.closest('label, div, section') || cb.parentElement);
+                            const text = (parent?.textContent || '').toLowerCase().substring(0, 200);
+                            if (keywords.some(kw => text.includes(kw))) {
+                                cb.click();
+                            }
+                        });
+                    }""")
                 except Exception:
                     pass
 
-                close_selectors = [
-                    'button[aria-label="Close"]', 'button[aria-label="Fechar"]',
-                    '.close-modal', '.modal-close', '[data-dismiss="modal"]',
-                    'button:has-text("Fechar")', 'button:has-text("×")',
-                    'button:has-text("Não, obrigado")', 'button:has-text("Não quero")',
-                    'button:has-text("Recusar")', 'button:has-text("Pular")',
-                    # Cookie banners
-                    'button:has-text("Aceitar")', 'button:has-text("Aceito")',
-                    'button:has-text("Accept")', 'button:has-text("OK")',
-                    '#cookie-accept', '.cookie-accept', '[data-action="accept-cookies"]',
-                ]
-                for sel in close_selectors:
-                    try:
-                        el = page.locator(sel).first
-                        if await el.is_visible(timeout=200):
-                            await el.click()
-                        session.add_log(f"  Popup/modal fechado: {sel[:40]}", "info")
-                        await asyncio.sleep(0.2)
-                    except Exception:
-                        continue
+                # ─── Fechar popups via JS batch (detecta visíveis, depois clica só neles) ───
+                try:
+                    visible_popup_indices = await page.evaluate("""() => {
+                        const sels = [
+                            'button[aria-label="Close"]', 'button[aria-label="Fechar"]',
+                            '.close-modal', '.modal-close', '[data-dismiss="modal"]',
+                            '#cookie-accept', '.cookie-accept', '[data-action="accept-cookies"]',
+                        ];
+                        const textButtons = ['Fechar', '×', 'Não, obrigado', 'Não quero', 'Recusar', 'Pular', 'Aceitar', 'Aceito', 'Accept', 'OK'];
+                        const results = [];
+                        // CSS selectors
+                        for (let i = 0; i < sels.length; i++) {
+                            const el = document.querySelector(sels[i]);
+                            if (el && el.getBoundingClientRect().width > 0) results.push({ type: 'css', selector: sels[i] });
+                        }
+                        // Text buttons
+                        document.querySelectorAll('button').forEach(btn => {
+                            const text = (btn.textContent || '').trim();
+                            if (btn.getBoundingClientRect().width > 0 && textButtons.includes(text)) {
+                                results.push({ type: 'text', text: text });
+                            }
+                        });
+                        return results;
+                    }""")
+                    if visible_popup_indices:
+                        for popup in visible_popup_indices[:3]:  # Max 3 popups
+                            try:
+                                if popup['type'] == 'css':
+                                    await page.locator(popup['selector']).first.click(timeout=500)
+                                else:
+                                    await page.locator(f'button:has-text("{popup["text"]}")').first.click(timeout=500)
+                                session.add_log(f"  Popup fechado: {popup.get('selector') or popup.get('text')}", "info")
+                            except Exception:
+                                continue
+                except Exception:
+                    pass
 
             # ─── Helpers de Detecção de Transição v6.0 ───
 

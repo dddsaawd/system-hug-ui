@@ -480,31 +480,44 @@ async def smart_select_country_brazil(page, session: EngineSession) -> bool:
 
 async def select_pix_payment(page, session: EngineSession) -> bool:
     """Tenta selecionar PIX como metodo de pagamento."""
-    pix_selectors = [
-        'label:has-text("PIX")', 'label:has-text("Pix")',
-        'div:has-text("PIX"):not(h1):not(h2):not(h3):not(p)',
-        'button:has-text("PIX")', 'button:has-text("Pix")',
-        '[data-method="pix"]', '[data-payment="pix"]',
-        'input[value="pix"]', 'input[value="PIX"]',
-        'span:has-text("PIX")',
-    ]
-    for sel in pix_selectors:
-        try:
-            el = page.locator(sel).first
-            if await el.is_visible(timeout=800):
+    # FAST: detecta via JS primeiro para evitar timeouts de seletores inexistentes
+    try:
+        pix_info = await page.evaluate("""() => {
+            const sels = ['label', 'div', 'button', 'span', 'input'];
+            for (const tag of sels) {
+                for (const el of document.querySelectorAll(tag)) {
+                    const text = (el.textContent || el.value || '').trim().toUpperCase();
+                    if (text.includes('PIX') && el.getBoundingClientRect().width > 0) {
+                        // Checa se já está selecionado
+                        const radio = el.querySelector('input[type="radio"]');
+                        if (radio && radio.checked) return { found: true, checked: true };
+                        // Checa data attributes
+                        if (el.dataset && (el.dataset.method === 'pix' || el.dataset.payment === 'pix')) {
+                            return { found: true, checked: false, selector: `[data-method="pix"], [data-payment="pix"]` };
+                        }
+                        return { found: true, checked: false, text: text.substring(0, 30) };
+                    }
+                }
+            }
+            return { found: false };
+        }""")
+        if pix_info and pix_info.get("found"):
+            if pix_info.get("checked"):
+                session.add_log("  PIX ja selecionado!", "info")
+                return True
+            # Clica via seletores rápidos
+            for sel in ['label:has-text("PIX")', 'button:has-text("PIX")', 'div:has-text("PIX"):not(h1):not(h2):not(h3):not(p)', 'span:has-text("PIX")', '[data-method="pix"]']:
                 try:
-                    is_checked = await el.locator('input[type="radio"]').first.is_checked()
-                    if is_checked:
-                        session.add_log("  PIX ja selecionado!", "info")
+                    el = page.locator(sel).first
+                    if await el.is_visible(timeout=150):
+                        await el.click()
+                        session.add_log("  Metodo PIX selecionado!", "success")
+                        await asyncio.sleep(0.1)
                         return True
                 except Exception:
-                    pass
-                await el.click()
-                session.add_log("  Metodo PIX selecionado!", "success")
-                await asyncio.sleep(0.15)
-                return True
-        except Exception:
-            continue
+                    continue
+    except Exception:
+        pass
     return False
 
 

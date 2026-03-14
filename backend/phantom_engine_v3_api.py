@@ -2053,8 +2053,9 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     session.successes += 1
                     return True
 
-                # 1. Fechar popups/modais que bloqueiam
-                await handle_popups_and_modals()
+                # 1. Fechar popups/modais — só nos primeiros scans de cada etapa
+                if loop_num <= 2 or step_number == 1:
+                    await handle_popups_and_modals()
 
                 # 2. Capturar fingerprint ANTES do scan
                 pre_scan_fp = await get_dom_fingerprint()

@@ -379,7 +379,7 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
     try:
         all_btns = page.locator("button")
         count = await all_btns.count()
-        skip_words = ["voltar", "back", "cancelar", "fechar", "close", "editar", "edit", "adicionar", "add", "remover", "remove", "cupom", "coupon"]
+        skip_words = ["voltar", "back", "cancelar", "fechar", "close", "editar", "edit", "remover", "remove", "cupom", "coupon"]
         for i in range(count):
             btn = all_btns.nth(i)
             if await btn.is_visible(timeout=200):
@@ -453,22 +453,19 @@ async def smart_select_country_brazil(page, session: EngineSession) -> bool:
     """Tenta selecionar Brasil (+55) no seletor de pais."""
     try:
         country_btn = page.locator('button[role="combobox"]').first  
-        if await country_btn.is_visible(timeout=800):
+        if await country_btn.is_visible(timeout=150):
             current_text = (await country_btn.text_content()) or ""
             if "+55" in current_text or "Brasil" in current_text:
-                session.add_log("  Pais Brasil (+55) ja selecionado", "info")
                 return True
             await country_btn.click()
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.15)
             for sel in ['button:has-text("Brasil")', 'button:has-text("Brazil")',
-                        '[data-country="BR"]', 'li:has-text("Brasil")',
-                        'option:has-text("Brasil")', 'div:has-text("+55")']:
+                        '[data-country="BR"]', 'li:has-text("Brasil")']:
                 try:
                     brasil = page.locator(sel).first
-                    if await brasil.is_visible(timeout=800):
+                    if await brasil.is_visible(timeout=200):
                         await brasil.click()
                         session.add_log("  Pais Brasil (+55) selecionado!", "info")
-                        await asyncio.sleep(0.15)
                         return True
                 except Exception:
                     continue
@@ -480,31 +477,44 @@ async def smart_select_country_brazil(page, session: EngineSession) -> bool:
 
 async def select_pix_payment(page, session: EngineSession) -> bool:
     """Tenta selecionar PIX como metodo de pagamento."""
-    pix_selectors = [
-        'label:has-text("PIX")', 'label:has-text("Pix")',
-        'div:has-text("PIX"):not(h1):not(h2):not(h3):not(p)',
-        'button:has-text("PIX")', 'button:has-text("Pix")',
-        '[data-method="pix"]', '[data-payment="pix"]',
-        'input[value="pix"]', 'input[value="PIX"]',
-        'span:has-text("PIX")',
-    ]
-    for sel in pix_selectors:
-        try:
-            el = page.locator(sel).first
-            if await el.is_visible(timeout=800):
+    # FAST: detecta via JS primeiro para evitar timeouts de seletores inexistentes
+    try:
+        pix_info = await page.evaluate("""() => {
+            const sels = ['label', 'div', 'button', 'span', 'input'];
+            for (const tag of sels) {
+                for (const el of document.querySelectorAll(tag)) {
+                    const text = (el.textContent || el.value || '').trim().toUpperCase();
+                    if (text.includes('PIX') && el.getBoundingClientRect().width > 0) {
+                        // Checa se já está selecionado
+                        const radio = el.querySelector('input[type="radio"]');
+                        if (radio && radio.checked) return { found: true, checked: true };
+                        // Checa data attributes
+                        if (el.dataset && (el.dataset.method === 'pix' || el.dataset.payment === 'pix')) {
+                            return { found: true, checked: false, selector: `[data-method="pix"], [data-payment="pix"]` };
+                        }
+                        return { found: true, checked: false, text: text.substring(0, 30) };
+                    }
+                }
+            }
+            return { found: false };
+        }""")
+        if pix_info and pix_info.get("found"):
+            if pix_info.get("checked"):
+                session.add_log("  PIX ja selecionado!", "info")
+                return True
+            # Clica via seletores rápidos
+            for sel in ['label:has-text("PIX")', 'button:has-text("PIX")', 'div:has-text("PIX"):not(h1):not(h2):not(h3):not(p)', 'span:has-text("PIX")', '[data-method="pix"]']:
                 try:
-                    is_checked = await el.locator('input[type="radio"]').first.is_checked()
-                    if is_checked:
-                        session.add_log("  PIX ja selecionado!", "info")
+                    el = page.locator(sel).first
+                    if await el.is_visible(timeout=150):
+                        await el.click()
+                        session.add_log("  Metodo PIX selecionado!", "success")
+                        await asyncio.sleep(0.1)
                         return True
                 except Exception:
-                    pass
-                await el.click()
-                session.add_log("  Metodo PIX selecionado!", "success")
-                await asyncio.sleep(0.15)
-                return True
-        except Exception:
-            continue
+                    continue
+    except Exception:
+        pass
     return False
 
 
@@ -521,10 +531,10 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
     for sel in radio_selectors:
         try:
             el = page.locator(sel).first
-            if await el.is_visible(timeout=500):
+            if await el.is_visible(timeout=150):
                 await el.click()
                 session.add_log(f"  Frete radio clicado: {sel}", "success")
-                await asyncio.sleep(0.15)
+                await asyncio.sleep(0.1)
                 return True
         except Exception:
             continue
@@ -539,13 +549,13 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
     for sel in frete_labels:
         try:
             el = page.locator(sel).first
-            if await el.is_visible(timeout=500):
+            if await el.is_visible(timeout=150):
                 text = (await el.text_content() or "")[:50]
                 if "pagamento" in text.lower() or "seguro" in text.lower():
                     continue
                 await el.click()
                 session.add_log(f"  Frete selecionado: {text}", "success")
-                await asyncio.sleep(0.15)
+                await asyncio.sleep(0.1)
                 return True
         except Exception:
             continue
@@ -638,12 +648,11 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
                 click_text = carrier_match.group(0) if carrier_match else card_text[:40].strip()
                 
                 el = page.get_by_text(click_text, exact=False).first
-                if await el.is_visible(timeout=1000):
+                if await el.is_visible(timeout=300):
                     await el.scroll_into_view_if_needed()
-                    await asyncio.sleep(0.1)
                     await el.click()
                     session.add_log(f"  ✅ Frete card clicado: {click_text}", "success")
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(0.15)
                     clicked = True
             except Exception:
                 pass
@@ -678,17 +687,12 @@ async def select_state_dropdown(page, estado: str, session: EngineSession) -> bo
     for sel in select_selectors:
         try:
             dropdown = page.locator(sel).first
-            if await dropdown.is_visible(timeout=500):
-                await dropdown.select_option(value=estado)
+            if await dropdown.is_visible(timeout=150):
+                try:
+                    await dropdown.select_option(value=estado)
+                except Exception:
+                    await dropdown.select_option(label=estado)
                 session.add_log(f"  Estado (select): {estado}", "info")
-                return True
-        except Exception:
-            pass
-        try:
-            dropdown = page.locator(sel).first
-            if await dropdown.is_visible(timeout=300):
-                await dropdown.select_option(label=estado)
-                session.add_log(f"  Estado (select label): {estado}", "info")
                 return True
         except Exception:
             continue
@@ -1883,50 +1887,58 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 return did_something
 
             async def handle_popups_and_modals():
-                """Fecha popups, modais de cookie, upsells que bloqueiam o fluxo."""
-                # ─── Desmarcar checkboxes de upsell ANTES de fechar modais ───
-                upsell_checkbox_texts = [
-                    "adicionar", "chapéu", "chapeu", "oferta", "combo",
-                    "50% off", "desconto", "promoção", "promocao",
-                ]
+                """Fecha popups, modais de cookie, upsells que bloqueiam o fluxo — OTIMIZADO via JS batch."""
+                # ─── Desmarcar checkboxes de upsell via JS (batch) ───
                 try:
-                    checkboxes = page.locator('input[type="checkbox"]')
-                    cb_count = await checkboxes.count()
-                    for i in range(cb_count):
-                        cb = checkboxes.nth(i)
-                        try:
-                            if await cb.is_checked(timeout=300):
-                                # Verifica texto próximo para detectar upsell
-                                parent_text = await cb.evaluate("el => (el.closest('label, div, section') || el.parentElement)?.textContent || ''")
-                                parent_lower = parent_text.lower()[:200]
-                                if any(kw in parent_lower for kw in upsell_checkbox_texts):
-                                    await cb.uncheck()
-                                    session.add_log(f"  🚫 Upsell desmarcado: {parent_text[:50]}", "info")
-                        except Exception:
-                            continue
+                    await page.evaluate("""() => {
+                        const keywords = ['adicionar', 'chapéu', 'chapeu', 'oferta', 'combo', '50% off', 'desconto', 'promoção', 'promocao'];
+                        document.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+                            const parent = (cb.closest('label, div, section') || cb.parentElement);
+                            const text = (parent?.textContent || '').toLowerCase().substring(0, 200);
+                            if (keywords.some(kw => text.includes(kw))) {
+                                cb.click();
+                            }
+                        });
+                    }""")
                 except Exception:
                     pass
 
-                close_selectors = [
-                    'button[aria-label="Close"]', 'button[aria-label="Fechar"]',
-                    '.close-modal', '.modal-close', '[data-dismiss="modal"]',
-                    'button:has-text("Fechar")', 'button:has-text("×")',
-                    'button:has-text("Não, obrigado")', 'button:has-text("Não quero")',
-                    'button:has-text("Recusar")', 'button:has-text("Pular")',
-                    # Cookie banners
-                    'button:has-text("Aceitar")', 'button:has-text("Aceito")',
-                    'button:has-text("Accept")', 'button:has-text("OK")',
-                    '#cookie-accept', '.cookie-accept', '[data-action="accept-cookies"]',
-                ]
-                for sel in close_selectors:
-                    try:
-                        el = page.locator(sel).first
-                        if await el.is_visible(timeout=200):
-                            await el.click()
-                        session.add_log(f"  Popup/modal fechado: {sel[:40]}", "info")
-                        await asyncio.sleep(0.2)
-                    except Exception:
-                        continue
+                # ─── Fechar popups via JS batch (detecta visíveis, depois clica só neles) ───
+                try:
+                    visible_popup_indices = await page.evaluate("""() => {
+                        const sels = [
+                            'button[aria-label="Close"]', 'button[aria-label="Fechar"]',
+                            '.close-modal', '.modal-close', '[data-dismiss="modal"]',
+                            '#cookie-accept', '.cookie-accept', '[data-action="accept-cookies"]',
+                        ];
+                        const textButtons = ['Fechar', '×', 'Não, obrigado', 'Não quero', 'Recusar', 'Pular', 'Aceitar', 'Aceito', 'Accept', 'OK'];
+                        const results = [];
+                        // CSS selectors
+                        for (let i = 0; i < sels.length; i++) {
+                            const el = document.querySelector(sels[i]);
+                            if (el && el.getBoundingClientRect().width > 0) results.push({ type: 'css', selector: sels[i] });
+                        }
+                        // Text buttons
+                        document.querySelectorAll('button').forEach(btn => {
+                            const text = (btn.textContent || '').trim();
+                            if (btn.getBoundingClientRect().width > 0 && textButtons.includes(text)) {
+                                results.push({ type: 'text', text: text });
+                            }
+                        });
+                        return results;
+                    }""")
+                    if visible_popup_indices:
+                        for popup in visible_popup_indices[:3]:  # Max 3 popups
+                            try:
+                                if popup['type'] == 'css':
+                                    await page.locator(popup['selector']).first.click(timeout=500)
+                                else:
+                                    await page.locator(f'button:has-text("{popup["text"]}")').first.click(timeout=500)
+                                session.add_log(f"  Popup fechado: {popup.get('selector') or popup.get('text')}", "info")
+                            except Exception:
+                                continue
+                except Exception:
+                    pass
 
             # ─── Helpers de Detecção de Transição v6.0 ───
 
@@ -2040,8 +2052,9 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     session.successes += 1
                     return True
 
-                # 1. Fechar popups/modais que bloqueiam
-                await handle_popups_and_modals()
+                # 1. Fechar popups/modais — só nos primeiros scans de cada etapa
+                if loop_num <= 2 or step_number == 1:
+                    await handle_popups_and_modals()
 
                 # 2. Capturar fingerprint ANTES do scan
                 pre_scan_fp = await get_dom_fingerprint()

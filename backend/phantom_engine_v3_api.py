@@ -648,12 +648,11 @@ async def select_shipping_option(page, session: EngineSession) -> bool:
                 click_text = carrier_match.group(0) if carrier_match else card_text[:40].strip()
                 
                 el = page.get_by_text(click_text, exact=False).first
-                if await el.is_visible(timeout=1000):
+                if await el.is_visible(timeout=300):
                     await el.scroll_into_view_if_needed()
-                    await asyncio.sleep(0.1)
                     await el.click()
                     session.add_log(f"  ✅ Frete card clicado: {click_text}", "success")
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(0.15)
                     clicked = True
             except Exception:
                 pass

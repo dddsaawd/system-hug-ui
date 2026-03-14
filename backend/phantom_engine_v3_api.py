@@ -379,7 +379,7 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
     try:
         all_btns = page.locator("button")
         count = await all_btns.count()
-        skip_words = ["voltar", "back", "cancelar", "fechar", "close", "editar", "edit", "adicionar", "add", "remover", "remove", "cupom", "coupon"]
+        skip_words = ["voltar", "back", "cancelar", "fechar", "close", "editar", "edit", "remover", "remove", "cupom", "coupon"]
         for i in range(count):
             btn = all_btns.nth(i)
             if await btn.is_visible(timeout=200):

@@ -1262,7 +1262,8 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
 
                         if _is_zedy_checkout(new_url):
                             zedy_redirected = True
-                            session.add_log(f"✅ Zedy checkout carregado: {page.url[:100]}", "success")
+                            platform_name = _detect_checkout_platform(page.url)
+                            session.add_log(f"✅ {platform_name} checkout carregado: {page.url[:100]}", "success")
                             break
 
                         # A cada ~12s, tenta acionar botão de ponte WooCommerce

@@ -223,7 +223,10 @@ export function isZedyCheckoutUrl(url: string): boolean {
 /**
  * Detecta a plataforma a partir de uma URL
  */
-export function detectPlatform(url: string): "zedy" | "yampi" | "unknown" {
+export function detectPlatform(url: string): "corvex" | "zedy" | "yampi" | "unknown" {
+  if (url.includes("pediidomercadopago.com") || url.includes("pedidomercadopago.com")) {
+    return "corvex";
+  }
   if (url.includes("vendeagora.com") || url.match(/seguro\.[^/]+\/checkout\/Z-/i)) {
     return "zedy";
   }

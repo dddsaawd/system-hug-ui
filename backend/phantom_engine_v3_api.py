@@ -1077,7 +1077,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     pass
 
             session.add_log(f"Navegando: {session.payload.target_url}", "info")
-            await _safe_goto(session.payload.target_url, timeout_ms=30000)
+            await _safe_goto(session.payload.target_url, timeout_ms=60000)
             await asyncio.sleep(random.uniform(0.5, 1.0))
 
             # ═══ PRE-CHECKOUT: Produto → Carrinho → Checkout Zedy ═══

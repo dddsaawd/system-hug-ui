@@ -1564,7 +1564,12 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 'bairro': 'Bairro', 'cidade': 'Cidade', 'estado': 'Estado',
             }
 
-            SKIP_IF_FILLED = {'rua', 'bairro', 'cidade', 'estado'}
+            # CORVEX: CEP NÃO auto-preenche endereço, precisa preencher tudo manualmente
+            if checkout_platform == "CORVEX":
+                SKIP_IF_FILLED = set()  # Não pular nenhum campo — preenche tudo
+                session.add_log("  📝 CORVEX: preenchimento manual de todos os campos de endereço", "info")
+            else:
+                SKIP_IF_FILLED = {'rua', 'bairro', 'cidade', 'estado'}
             OPTIONAL_FIELDS = {'complemento'}
             POST_FILL_DELAY = {'cep': 2.0}  # delay CEP reduzido para velocidade
 

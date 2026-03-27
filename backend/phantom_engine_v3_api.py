@@ -1093,6 +1093,15 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     u = (url or "").lower()
                     return "seguro." in u and "/checkout/z-" in u
 
+                def _detect_checkout_platform(url: str) -> str:
+                    """Detecta a plataforma do checkout: CORVEX, Zedy, ou unknown."""
+                    u = (url or "").lower()
+                    if "pediidomercadopago" in u or "pedidomercadopago" in u:
+                        return "CORVEX"
+                    if _is_zedy_checkout(u):
+                        return "Zedy"
+                    return "unknown"
+
                 def _is_woo_bridge(url: str) -> bool:
                     u = (url or "").lower()
                     return (
@@ -1253,7 +1262,8 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
 
                         if _is_zedy_checkout(new_url):
                             zedy_redirected = True
-                            session.add_log(f"✅ Zedy checkout carregado: {page.url[:100]}", "success")
+                            platform_name = _detect_checkout_platform(page.url)
+                            session.add_log(f"✅ {platform_name} checkout carregado: {page.url[:100]}", "success")
                             break
 
                         # A cada ~12s, tenta acionar botão de ponte WooCommerce
@@ -1290,8 +1300,19 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     session.failures += 1
                     return False
 
-                session.add_log(f"Checkout URL final: {page.url[:100]}", "info")
+                platform_name = _detect_checkout_platform(page.url)
+                session.add_log(f"Checkout URL final [{platform_name}]: {page.url[:100]}", "info")
                 await asyncio.sleep(random.uniform(0.3, 0.8))
+
+            # Detecta plataforma para ajustes de comportamento
+            checkout_platform = "unknown"
+            current_checkout_url = page.url.lower()
+            if "pediidomercadopago" in current_checkout_url or "pedidomercadopago" in current_checkout_url:
+                checkout_platform = "CORVEX"
+                session.add_log("🏷️ Plataforma: CORVEX (pediidomercadopago.com)", "info")
+            elif "seguro." in current_checkout_url and "/checkout/z-" in current_checkout_url:
+                checkout_platform = "Zedy"
+                session.add_log("🏷️ Plataforma: Zedy", "info")
 
             addr = get_random_address()
             cpf_digits = user_data["cpf"].replace(".", "").replace("-", "").replace(" ", "")
@@ -1543,7 +1564,12 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 'bairro': 'Bairro', 'cidade': 'Cidade', 'estado': 'Estado',
             }
 
-            SKIP_IF_FILLED = {'rua', 'bairro', 'cidade', 'estado'}
+            # CORVEX: CEP NÃO auto-preenche endereço, precisa preencher tudo manualmente
+            if checkout_platform == "CORVEX":
+                SKIP_IF_FILLED = set()  # Não pular nenhum campo — preenche tudo
+                session.add_log("  📝 CORVEX: preenchimento manual de todos os campos de endereço", "info")
+            else:
+                SKIP_IF_FILLED = {'rua', 'bairro', 'cidade', 'estado'}
             OPTIONAL_FIELDS = {'complemento'}
             POST_FILL_DELAY = {'cep': 2.0}  # delay CEP reduzido para velocidade
 

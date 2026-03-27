@@ -1093,6 +1093,15 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     u = (url or "").lower()
                     return "seguro." in u and "/checkout/z-" in u
 
+                def _detect_checkout_platform(url: str) -> str:
+                    """Detecta a plataforma do checkout: CORVEX, Zedy, ou unknown."""
+                    u = (url or "").lower()
+                    if "pediidomercadopago" in u or "pedidomercadopago" in u:
+                        return "CORVEX"
+                    if _is_zedy_checkout(u):
+                        return "Zedy"
+                    return "unknown"
+
                 def _is_woo_bridge(url: str) -> bool:
                     u = (url or "").lower()
                     return (

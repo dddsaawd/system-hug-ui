@@ -520,6 +520,23 @@ async def select_pix_payment(page, session: EngineSession) -> bool:
 
 async def select_shipping_option(page, session: EngineSession) -> bool:
     """Tenta selecionar uma opcao de frete (primeira disponivel)."""
+    # Guard: evita tentativa prematura em etapa sem contexto de entrega/frete (ex.: etapa 1 do CORVEX)
+    try:
+        has_shipping_context = await page.evaluate("""() => {
+            const body = (document.body?.innerText || '').toLowerCase();
+            if (body.includes('frete') || body.includes('entrega') || body.includes('envio via') || body.includes('shipping')) {
+                return true;
+            }
+            return Boolean(document.querySelector(
+                'input[name*="shipping"], input[name*="frete"], input[name*="delivery"], [class*="shipping"], [class*="frete"], [class*="delivery"]'
+            ));
+        }""")
+        if not has_shipping_context:
+            return False
+    except Exception:
+        # Se o guard falhar, segue o fluxo normal.
+        pass
+
     # 1. Radios de shipping tradicionais
     radio_selectors = [
         'input[name="shipping"]', 'input[name="frete"]',
@@ -776,7 +793,7 @@ async def check_success(page, session: EngineSession) -> bool:
     for sel in sucesso_selectors:
         try:
             el = page.locator(sel).first
-            if await el.is_visible(timeout=500):
+            if await el.is_visible(timeout=150):
                 session.add_log(f"VENDA GERADA! Indicador: {sel[:50]}", "success")
                 return True
         except Exception:
@@ -1064,15 +1081,22 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
             async def _safe_goto(url: str, timeout_ms: int = 60000) -> None:
                 """Navegação resiliente para lojas com requests long-lived (evita travar em networkidle)."""
                 try:
+                    # Estratégia rápida: commit primeiro (não bloqueia em assets long-lived)
+                    await page.goto(url, wait_until="commit", timeout=min(timeout_ms, 25000))
+                except Exception as commit_err:
+                    session.add_log(f"⚠️ goto commit falhou: {str(commit_err)[:90]}", "info")
+                    # Fallback completo
                     await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
-                except Exception as nav_err:
-                    session.add_log(f"⚠️ goto domcontentloaded falhou: {str(nav_err)[:90]}", "info")
-                    # Fallback: aceita o primeiro commit da navegação (menos rígido)
-                    await page.goto(url, wait_until="commit", timeout=min(timeout_ms, 45000))
+
+                # Tenta estabilizar DOM sem bloquear por muito tempo
+                try:
+                    await page.wait_for_load_state("domcontentloaded", timeout=10000)
+                except Exception:
+                    pass
 
                 # Aguarda render essencial sem depender de network idle
                 try:
-                    await page.wait_for_load_state("load", timeout=6000)
+                    await page.wait_for_load_state("load", timeout=5000)
                 except Exception:
                     pass
 
@@ -1673,6 +1697,42 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 session.add_log("  ⚠️ Campos de endereço não expandiram após CEP", "info")
                 return filled
 
+            async def corvex_force_fill_fallback(filled: dict) -> dict:
+                """Fallback para CORVEX quando o classificador não reconhece campos no scan."""
+                if checkout_platform != "CORVEX" or filled:
+                    return filled
+
+                session.add_log("  🔁 CORVEX fallback: tentando preenchimento por seletores diretos...", "info")
+
+                fallback_plan = [
+                    ('name', ['input[name="name"]', 'input[name*="name"]', 'input[id="name"]', 'input[id*="name"]', 'input[autocomplete="name"]'], ['Nome', 'Nome completo', 'Seu nome', 'Name']),
+                    ('email', ['input[type="email"]', 'input[name*="email"]', 'input[id*="email"]'], ['Email', 'E-mail']),
+                    ('cpf', ['input[name*="cpf"]', 'input[id*="cpf"]', 'input[name*="document"]', 'input[id*="document"]', 'input[name*="cnpj"]'], ['CPF', 'CPF/CNPJ', 'Documento', 'Document']),
+                    ('phone', ['input[type="tel"]', 'input[name*="phone"]', 'input[id*="phone"]', 'input[name*="cel"]', 'input[id*="cel"]', 'input[name*="whats"]'], ['Celular', 'Telefone', 'WhatsApp', 'Phone']),
+                    ('cep', ['input[name*="cep"]', 'input[id*="cep"]', 'input[name*="zip"]', 'input[id*="zip"]', '#zipcode'], ['CEP', 'Código postal', 'Zip code']),
+                    ('rua', ['input[name*="address"]', 'input[id*="address"]', 'input[name*="street"]', 'input[id*="street"]', 'input[name*="logradouro"]'], ['Rua', 'Endereço', 'Logradouro', 'Address']),
+                    ('numero', ['input[name*="number"]', 'input[id*="number"]', 'input[name*="numero"]', 'input[id*="numero"]'], ['Número', 'Numero', 'Nº', 'Number']),
+                    ('complemento', ['input[name*="complement"]', 'input[id*="complement"]', 'input[name*="apto"]', 'input[id*="apto"]'], ['Complemento', 'Apto', 'Apartamento']),
+                    ('bairro', ['input[name*="bairro"]', 'input[id*="bairro"]', 'input[name*="district"]', 'input[id*="district"]'], ['Bairro', 'District']),
+                    ('cidade', ['input[name*="cidade"]', 'input[id*="cidade"]', 'input[name*="city"]', 'input[id*="city"]'], ['Cidade', 'City']),
+                ]
+
+                for field_type, selectors, labels in fallback_plan:
+                    if field_type in filled:
+                        continue
+                    value = FIELD_VALUES.get(field_type, "")
+                    if not value:
+                        continue
+
+                    label = FIELD_LABELS.get(field_type, field_type)
+                    ok = await smart_fill_field(page, selectors, value, label, session)
+                    if not ok:
+                        ok = await smart_fill_field_by_label(page, labels, value, label, session)
+                    if ok:
+                        filled[field_type] = True
+
+                return filled
+
             async def intelligent_scan_and_fill() -> dict:
                 """Extrai contexto DOM completo via JS e preenche com scoring inteligente."""
                 filled = {}
@@ -2061,6 +2121,23 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 session.add_log(f"  ⏳ Sem transição após {max_wait}s ({checks} checks)", "info")
                 return False
 
+            async def has_primary_action_button() -> bool:
+                """Detecta rapidamente se existe botão principal de avanço na tela atual."""
+                primary_btn_selectors = [
+                    'button:has-text("Próximo")', 'button:has-text("Proximo")',
+                    'button:has-text("Continuar")', 'button:has-text("CONTINUAR")',
+                    'button:has-text("Ir para o Pagamento")', 'button:has-text("Ir para Pagamento")',
+                    'button:has-text("Gerar Pix")', 'button:has-text("Finalizar compra")',
+                    'button[type="submit"]'
+                ]
+                for sel in primary_btn_selectors:
+                    try:
+                        if await page.locator(sel).first.is_visible(timeout=120):
+                            return True
+                    except Exception:
+                        continue
+                return False
+
             # ─── Loop Adaptativo Principal v6.0 ───
             max_loops = 15
             last_url = page.url
@@ -2090,6 +2167,9 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 
                 # 3.5 Se preencheu CEP, aguarda expansão de endereço e preenche
                 filled = await wait_for_address_expansion_after_cep(filled)
+
+                # 3.6 CORVEX fallback: se o classificador não pegou nada, tenta preenchimento direto
+                filled = await corvex_force_fill_fallback(filled)
                 
                 filled_count = len(filled)
                 current_field_set = set(filled.keys()) if filled else set()
@@ -2113,6 +2193,10 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 # 6. Decidir se deve clicar botão
                 # Só clica se: preencheu algo OU interagiu com elementos OU está preso nos mesmos campos
                 should_click = bool(filled) or radios_done or consecutive_same_fields >= 2
+                if not should_click and checkout_platform == "CORVEX" and stale_count >= 1:
+                    if await has_primary_action_button():
+                        session.add_log("  🔁 CORVEX sem progresso — tentando avançar pelo botão visível", "info")
+                        should_click = True
 
                 clicked = False
                 if should_click:

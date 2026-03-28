@@ -297,30 +297,69 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
     """
     Clica no botao de avancar/finalizar da etapa atual.
     Estrategia otimizada: busca rapida por texto, depois fallback.
+    Etapa-aware: na etapa de pagamento (CPF visível), prioriza "Finalizar Compra" e ignora "Ir para Pagamento".
     """
-    # Textos ordenados por prioridade (checkouts Texano + Imperio + genéricos)
-    button_texts = [
-        # Finalizacao
-        "Gerar Pix", "GERAR PIX",
-        "Finalizar compra", "FINALIZAR COMPRA",
-        "Finalizar pedido", "FINALIZAR PEDIDO",
-        "Comprar agora", "COMPRAR AGORA",
-        "Pagar agora", "PAGAR AGORA",
-        "Concluir compra", "CONCLUIR COMPRA",
-        "Confirmar pedido", "CONFIRMAR PEDIDO",
-        "Gerar Boleto", "GERAR BOLETO",
-        # Navegacao
-        "Ir para Pagamento", "IR PARA PAGAMENTO", "Ir para pagamento",
-        "Ir para o pagamento", "IR PARA O PAGAMENTO",
-        "Escolher frete", "ESCOLHER FRETE", "Escolher Frete",
-        "Ir para entrega", "IR PARA ENTREGA",
-        # Genéricos
-        "CONTINUAR", "Continuar", "Continue",
-        "Próximo", "PRÓXIMO", "Proximo", "PROXIMO",
-        "Avançar", "AVANÇAR", "Avancar",
-        "Prosseguir", "PROSSEGUIR",
-        "Next", "NEXT",
-    ]
+    # Detecta se estamos na etapa de pagamento (CPF já visível/preenchido)
+    is_payment_step = False
+    try:
+        is_payment_step = await page.evaluate("""() => {
+            const inputs = document.querySelectorAll('input');
+            for (const inp of inputs) {
+                const id = (inp.id || '').toLowerCase();
+                const name = (inp.name || '').toLowerCase();
+                const ph = (inp.placeholder || '').toLowerCase();
+                if ((id.includes('document') || id.includes('cpf') || name.includes('cpf') || ph.includes('000.000.000'))
+                    && inp.getBoundingClientRect().width > 0) {
+                    return true;
+                }
+            }
+            return false;
+        }""")
+    except Exception:
+        pass
+
+    if is_payment_step:
+        # Na etapa de pagamento: SÓ botões de finalização (nunca "Ir para Pagamento")
+        button_texts = [
+            "Gerar Pix", "GERAR PIX",
+            "Finalizar compra", "FINALIZAR COMPRA",
+            "Finalizar pedido", "FINALIZAR PEDIDO",
+            "Pagar agora", "PAGAR AGORA",
+            "Concluir compra", "CONCLUIR COMPRA",
+            "Confirmar pedido", "CONFIRMAR PEDIDO",
+            "Gerar Boleto", "GERAR BOLETO",
+            "Comprar agora", "COMPRAR AGORA",
+        ]
+        # Scroll down para revelar botões de finalização
+        try:
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await asyncio.sleep(0.3)
+        except Exception:
+            pass
+    else:
+        # Textos ordenados por prioridade (checkouts Texano + Imperio + genéricos)
+        button_texts = [
+            # Finalizacao
+            "Gerar Pix", "GERAR PIX",
+            "Finalizar compra", "FINALIZAR COMPRA",
+            "Finalizar pedido", "FINALIZAR PEDIDO",
+            "Comprar agora", "COMPRAR AGORA",
+            "Pagar agora", "PAGAR AGORA",
+            "Concluir compra", "CONCLUIR COMPRA",
+            "Confirmar pedido", "CONFIRMAR PEDIDO",
+            "Gerar Boleto", "GERAR BOLETO",
+            # Navegacao
+            "Ir para Pagamento", "IR PARA PAGAMENTO", "Ir para pagamento",
+            "Ir para o pagamento", "IR PARA O PAGAMENTO",
+            "Escolher frete", "ESCOLHER FRETE", "Escolher Frete",
+            "Ir para entrega", "IR PARA ENTREGA",
+            # Genéricos
+            "CONTINUAR", "Continuar", "Continue",
+            "Próximo", "PRÓXIMO", "Proximo", "PROXIMO",
+            "Avançar", "AVANÇAR", "Avancar",
+            "Prosseguir", "PROSSEGUIR",
+            "Next", "NEXT",
+        ]
 
     # ─── Estrategia 1: getByRole('button') — mais confiavel e rapido ───
     for text in button_texts:

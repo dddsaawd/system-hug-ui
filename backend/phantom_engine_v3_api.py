@@ -805,12 +805,14 @@ async def check_success(page, session: EngineSession) -> bool:
         if page_text:
             lower = page_text.lower()
             # Indicadores FORTES (1 basta)
+            # NOTA: "código pix" foi REMOVIDO — aparece no texto informativo
+            # "O código Pix expira em 30 minutos" ANTES de finalizar
             strong = [
                 "pix gerado", "aguardando pagamento", "pedido realizado",
                 "compra realizada", "copia e cola", "copiar codigo", "copiar código",
                 "boleto gerado", "pedido confirmado", "pedido criado",
                 "pague com pix", "escaneie o qr", "copie o código",
-                "pagamento via pix", "código pix",
+                "pagamento via pix",
             ]
             for ind in strong:
                 if ind in lower:

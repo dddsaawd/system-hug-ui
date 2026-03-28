@@ -2297,21 +2297,34 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                 pass
                             await asyncio.sleep(random.uniform(0.3, 0.6))
 
-                # 8. Detecção de progresso
+                # 8. Detecção de progresso — CÉREBRO ADAPTATIVO
                 any_action = bool(filled) or radios_done or clicked
                 if not any_action:
                     stale_count += 1
                     session.add_log(f"  Sem acao possivel (stale #{stale_count})", "info")
-                    if stale_count >= 4:
+                    if stale_count >= 5:
                         session.add_log("  Sem progresso. Encerrando.", "error")
                         break
-                    # Scroll down para revelar campos escondidos
+                    # 🧠 Adaptativo: scroll + fallback inteligente
                     if stale_count >= 2:
                         try:
                             await page.evaluate("window.scrollBy(0, 300)")
                             session.add_log("  📜 Scroll para revelar campos...", "info")
                         except Exception:
                             pass
+                    # 🧠 Adaptativo stale_count==3: tenta clicar qualquer botão primário mesmo sem ter preenchido
+                    if stale_count == 3:
+                        session.add_log("  🧠 Adaptativo: tentando forçar clique em botão primário...", "info")
+                        pre_click_fp = await get_dom_fingerprint()
+                        force_clicked = await universal_click_button(page, session, loop_num)
+                        if force_clicked:
+                            transitioned = await wait_for_step_transition(pre_click_fp)
+                            if transitioned:
+                                step_number += 1
+                                consecutive_same_fields = 0
+                                last_field_set = set()
+                                stale_count = 0
+                                continue
                     await asyncio.sleep(0.5)
                     continue
                 else:

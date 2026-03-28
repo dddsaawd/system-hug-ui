@@ -2210,12 +2210,13 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 # 5. Pausa humana
                 await asyncio.sleep(random.uniform(0.15, 0.3))
 
-                # 6. Decidir se deve clicar botão
-                # Só clica se: preencheu algo OU interagiu com elementos OU está preso nos mesmos campos
+                # 6. Decidir se deve clicar botão — CÉREBRO ADAPTATIVO
+                # Regra universal: se preencheu algo, interagiu, ou está preso → tenta avançar
                 should_click = bool(filled) or radios_done or consecutive_same_fields >= 2
-                if not should_click and checkout_platform == "CORVEX" and stale_count >= 1:
+                # ADAPTATIVO: qualquer plataforma (não só CORVEX) tenta avançar quando stale
+                if not should_click and stale_count >= 1:
                     if await has_primary_action_button():
-                        session.add_log("  🔁 CORVEX sem progresso — tentando avançar pelo botão visível", "info")
+                        session.add_log("  🧠 Adaptativo: botão visível sem progresso — tentando avançar", "info")
                         should_click = True
 
                 clicked = False

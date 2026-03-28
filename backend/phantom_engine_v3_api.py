@@ -1352,12 +1352,13 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
             # Detecta plataforma para ajustes de comportamento
             checkout_platform = "unknown"
             current_checkout_url = page.url.lower()
-            if "pediidomercadopago" in current_checkout_url or "pedidomercadopago" in current_checkout_url:
-                checkout_platform = "CORVEX"
-                session.add_log("🏷️ Plataforma: CORVEX (pediidomercadopago.com)", "info")
-            elif "seguro." in current_checkout_url and "/checkout/z-" in current_checkout_url:
+            # Prioridade: seguro.*/checkout/z-* = Zedy (mesmo em pediidomercadopago)
+            if "seguro." in current_checkout_url and "/checkout/z-" in current_checkout_url:
                 checkout_platform = "Zedy"
                 session.add_log("🏷️ Plataforma: Zedy", "info")
+            elif "pediidomercadopago" in current_checkout_url or "pedidomercadopago" in current_checkout_url:
+                checkout_platform = "CORVEX"
+                session.add_log("🏷️ Plataforma: CORVEX (pediidomercadopago.com)", "info")
 
             addr = get_random_address()
             cpf_digits = user_data["cpf"].replace(".", "").replace("-", "").replace(" ", "")

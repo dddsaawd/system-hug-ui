@@ -293,7 +293,7 @@ async def smart_fill_field_by_label(page, label_texts: list[str], value: str, fi
     return False
 
 
-async def universal_click_button(page, session: EngineSession, etapa: int) -> bool:
+async def universal_click_button(page, session: EngineSession, etapa: int, filled: Optional[dict] = None, current_fields: Optional[set] = None) -> bool:
     """
     Clica no botao de avancar/finalizar da etapa atual.
     Estrategia otimizada: busca rapida por texto, depois fallback.
@@ -301,22 +301,43 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
     """
     # Detecta se estamos na etapa de pagamento (CPF já visível/preenchido)
     is_payment_step = False
+    payment_finalize_keywords = [
+        "gerar pix", "finalizar compra", "finalizar pedido", "pagar agora",
+        "concluir compra", "confirmar pedido", "gerar boleto", "comprar agora",
+    ]
+
+    # Sinal forte vindo do scan inteligente
     try:
-        is_payment_step = await page.evaluate("""() => {
-            const inputs = document.querySelectorAll('input');
-            for (const inp of inputs) {
-                const id = (inp.id || '').toLowerCase();
-                const name = (inp.name || '').toLowerCase();
-                const ph = (inp.placeholder || '').toLowerCase();
-                if ((id.includes('document') || id.includes('cpf') || name.includes('cpf') || ph.includes('000.000.000'))
-                    && inp.getBoundingClientRect().width > 0) {
-                    return true;
-                }
-            }
-            return false;
-        }""")
+        if current_fields and any(f in current_fields for f in ["cpf", "document"]):
+            is_payment_step = True
+        elif filled and any(k in filled for k in ["cpf", "document"]):
+            is_payment_step = True
     except Exception:
         pass
+
+    if not is_payment_step:
+        try:
+            is_payment_step = await page.evaluate("""() => {
+                const inputs = document.querySelectorAll('input');
+                for (const inp of inputs) {
+                    const id = (inp.id || '').toLowerCase();
+                    const name = (inp.name || '').toLowerCase();
+                    const ph = (inp.placeholder || '').toLowerCase();
+                    const ac = (inp.autocomplete || '').toLowerCase();
+                    const rect = inp.getBoundingClientRect();
+                    const visible = rect.width > 0 && rect.height > 0;
+                    if (!visible) continue;
+                    if (id.includes('document') || id.includes('cpf') ||
+                        name.includes('document') || name.includes('cpf') ||
+                        ph.includes('000.000.000') || ph.includes('cpf') ||
+                        ac.includes('cpf')) {
+                        return true;
+                    }
+                }
+                return false;
+            }""")
+        except Exception:
+            pass
 
     if is_payment_step:
         # Na etapa de pagamento: SÓ botões de finalização (nunca "Ir para Pagamento")
@@ -369,6 +390,8 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
                 btn_text = (await btn.text_content() or "").strip().lower()
                 if any(w in btn_text for w in ["voltar", "back", "cancelar", "editar"]):
                     continue
+                    if is_payment_step and any(w in btn_text for w in ["ir para pagamento", "ir para o pagamento", "continuar", "próximo", "proximo"]):
+                        continue
                 await btn.scroll_into_view_if_needed()
                 await asyncio.sleep(0.1)
                 await btn.click(timeout=3000)
@@ -385,6 +408,8 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
                 if await el.is_visible(timeout=200):
                     el_text = (await el.text_content() or "").strip().lower()
                     if any(w in el_text for w in ["voltar", "back", "cancelar", "editar"]):
+                        continue
+                    if is_payment_step and any(w in el_text for w in ["ir para pagamento", "ir para o pagamento", "continuar", "próximo", "proximo"]):
                         continue
                     # Para div/span genéricos, exigir match mais exato (evitar containers grandes)
                     if tag in ("div", "span") and len(el_text) > 60:
@@ -425,6 +450,8 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
                 btn_text = (await btn.text_content() or "").strip()
                 if btn_text and len(btn_text) > 2:
                     if not any(w in btn_text.lower() for w in skip_words):
+                        if is_payment_step and not any(k in btn_text.lower() for k in payment_finalize_keywords):
+                            continue
                         await btn.scroll_into_view_if_needed()
                         await asyncio.sleep(0.1)
                         await btn.click(timeout=3000)
@@ -434,9 +461,17 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
         pass
 
     # ─── Estrategia 5: getByText para elementos não-standard (div, span sem role) ───
-    priority_texts = ["ESCOLHER FRETE", "Escolher frete", "Escolher Frete",
-                      "CONTINUAR", "Continuar", "IR PARA PAGAMENTO", "Ir para pagamento",
-                      "FINALIZAR COMPRA", "Finalizar compra", "GERAR PIX", "Gerar Pix"]
+    if is_payment_step:
+        priority_texts = [
+            "FINALIZAR COMPRA", "Finalizar compra", "FINALIZAR PEDIDO", "Finalizar pedido",
+            "GERAR PIX", "Gerar Pix", "PAGAR AGORA", "Pagar agora",
+        ]
+    else:
+        priority_texts = [
+            "ESCOLHER FRETE", "Escolher frete", "Escolher Frete",
+            "CONTINUAR", "Continuar", "IR PARA PAGAMENTO", "Ir para pagamento",
+            "FINALIZAR COMPRA", "Finalizar compra", "GERAR PIX", "Gerar Pix",
+        ]
     for text in priority_texts:
         try:
             el = page.get_by_text(text, exact=False).first
@@ -1973,7 +2008,9 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                         session.add_log(f"  Erro {FIELD_LABELS.get(field_type, field_type)}: {str(e)[:40]}", "error")
 
                 # FALLBACK FINAL: se CEP não foi preenchido, tenta direto por #zipcode
-                if 'cep' not in filled:
+                # Não roda em etapa de pagamento (evita loop tentando CEP quando só há CPF/PIX)
+                payment_context_detected = ('cpf' in filled) or any(ft == 'cpf' for _, ft, _ in classified)
+                if 'cep' not in filled and not payment_context_detected:
                     cep_value = FIELD_VALUES.get('cep', '')
                     if cep_value:
                         session.add_log("  🔄 CEP não preenchido — tentando fallback #zipcode...", "info")
@@ -2003,6 +2040,23 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 """Lida com todos os elementos interativos: radios, selects, pais, PIX, frete."""
                 did_something = False
 
+                # Em etapa de pagamento, evita reclicar frete indevidamente
+                in_payment_step = False
+                try:
+                    in_payment_step = await page.evaluate("""() => {
+                        const sel = ['#document', 'input[name*="document"]', 'input[name*="cpf"]', 'input[id*="cpf"]'];
+                        for (const s of sel) {
+                            const el = document.querySelector(s);
+                            if (el) {
+                                const r = el.getBoundingClientRect();
+                                if (r.width > 0 && r.height > 0) return true;
+                            }
+                        }
+                        return false;
+                    }""")
+                except Exception:
+                    pass
+
                 # País Brasil
                 try:
                     if await smart_select_country_brazil(page, session):
@@ -2018,11 +2072,12 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     pass
 
                 # Frete
-                try:
-                    if await select_shipping_option(page, session):
-                        did_something = True
-                except Exception:
-                    pass
+                if not in_payment_step:
+                    try:
+                        if await select_shipping_option(page, session):
+                            did_something = True
+                    except Exception:
+                        pass
 
                 # PIX
                 try:
@@ -2272,7 +2327,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 if should_click:
                     # Capturar fingerprint ANTES do clique para detectar transição
                     pre_click_fp = await get_dom_fingerprint()
-                    clicked = await universal_click_button(page, session, loop_num)
+                    clicked = await universal_click_button(page, session, loop_num, filled=filled, current_fields=current_field_set)
 
                     if clicked:
                         # 7. AGUARDAR TRANSIÇÃO DE ETAPA (principal melhoria)
@@ -2365,7 +2420,7 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     if stale_count == 3:
                         session.add_log("  🧠 Adaptativo: tentando forçar clique em botão primário...", "info")
                         pre_click_fp = await get_dom_fingerprint()
-                        force_clicked = await universal_click_button(page, session, loop_num)
+                        force_clicked = await universal_click_button(page, session, loop_num, filled=filled, current_fields=current_field_set)
                         if force_clicked:
                             transitioned = await wait_for_step_transition(pre_click_fp)
                             if transitioned:

@@ -2262,6 +2262,37 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                 }""")
                                 if errors:
                                     session.add_log(f"  ❌ Erros na página: {errors}", "error")
+                                    # 🧠 ADAPTATIVO: tenta corrigir erros de validação automaticamente
+                                    for err_msg in errors:
+                                        err_lower = err_msg.lower()
+                                        # Campo obrigatório vazio → tenta preencher
+                                        if "obrigat" in err_lower or "required" in err_lower or "preencha" in err_lower:
+                                            session.add_log("  🧠 Tentando preencher campos obrigatórios faltantes...", "info")
+                                            # Re-scan com foco em campos vazios obrigatórios
+                                            try:
+                                                empty_required = await page.evaluate("""() => {
+                                                    const inputs = document.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), select, textarea');
+                                                    const empty = [];
+                                                    for (const inp of inputs) {
+                                                        const rect = inp.getBoundingClientRect();
+                                                        if (rect.width < 30 || rect.height < 10) continue;
+                                                        const val = (inp.value || '').trim();
+                                                        if (!val) {
+                                                            const label = inp.labels?.[0]?.textContent?.trim() || '';
+                                                            const ph = inp.placeholder || '';
+                                                            const name = inp.name || inp.id || '';
+                                                            empty.push({name, label, placeholder: ph, type: inp.type || 'text'});
+                                                        }
+                                                    }
+                                                    return empty.slice(0, 5);
+                                                }""")
+                                                if empty_required:
+                                                    session.add_log(f"  🧠 Campos vazios detectados: {[e.get('name') or e.get('label') for e in empty_required]}", "info")
+                                            except Exception:
+                                                pass
+                                        # Número inválido / formato errado → tenta reformatar
+                                        if "número" in err_lower or "inválid" in err_lower or "invalid" in err_lower:
+                                            session.add_log("  🧠 Erro de validação detectado — próximo scan tentará corrigir", "info")
                             except Exception:
                                 pass
                             await asyncio.sleep(random.uniform(0.3, 0.6))

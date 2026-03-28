@@ -765,6 +765,24 @@ async def check_success(page, session: EngineSession) -> bool:
     except Exception:
         pass
 
+    # GUARD 2: Se botão "Finalizar Compra" ainda está visível, NÃO é sucesso
+    try:
+        finalizar_btns = [
+            'button:has-text("Finalizar Compra")', 'button:has-text("Finalizar compra")',
+            'button:has-text("FINALIZAR COMPRA")', 'button:has-text("Gerar Pix")',
+            'button:has-text("GERAR PIX")',
+        ]
+        for sel in finalizar_btns:
+            try:
+                el = page.locator(sel).first
+                if await el.is_visible(timeout=150):
+                    session.add_log(f"  ⛔ Botão '{sel[19:-2]}' ainda visível — não é sucesso ainda", "info")
+                    return False
+            except Exception:
+                continue
+    except Exception:
+        pass
+
     # PRIMEIRO: verifica se a URL mudou para página de sucesso/pagamento
     current_url = page.url.lower()
     if any(k in current_url for k in ['/order/', '/obrigado', '/thankyou', '/thank-you', '/success', '/payment/', '/pix']):
@@ -805,12 +823,14 @@ async def check_success(page, session: EngineSession) -> bool:
         if page_text:
             lower = page_text.lower()
             # Indicadores FORTES (1 basta)
+            # NOTA: "código pix" foi REMOVIDO — aparece no texto informativo
+            # "O código Pix expira em 30 minutos" ANTES de finalizar
             strong = [
                 "pix gerado", "aguardando pagamento", "pedido realizado",
                 "compra realizada", "copia e cola", "copiar codigo", "copiar código",
                 "boleto gerado", "pedido confirmado", "pedido criado",
                 "pague com pix", "escaneie o qr", "copie o código",
-                "pagamento via pix", "código pix",
+                "pagamento via pix",
             ]
             for ind in strong:
                 if ind in lower:
@@ -818,7 +838,7 @@ async def check_success(page, session: EngineSession) -> bool:
                     return True
 
             # "qr code" e "obrigado" são FRACOS — precisam de contexto extra
-            weak_indicators = ["qr code", "obrigado", "sucesso"]
+            weak_indicators = ["qr code", "obrigado", "sucesso", "código pix"]
             confirm_context = ["copiar", "copia", "pagar", "escaneie", "prazo", "pedido", "pagamento confirmado"]
             for ind in weak_indicators:
                 if ind in lower:

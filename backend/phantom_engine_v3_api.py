@@ -820,7 +820,7 @@ async def check_success(page, session: EngineSession) -> bool:
                     return True
 
             # "qr code" e "obrigado" são FRACOS — precisam de contexto extra
-            weak_indicators = ["qr code", "obrigado", "sucesso"]
+            weak_indicators = ["qr code", "obrigado", "sucesso", "código pix"]
             confirm_context = ["copiar", "copia", "pagar", "escaneie", "prazo", "pedido", "pagamento confirmado"]
             for ind in weak_indicators:
                 if ind in lower:

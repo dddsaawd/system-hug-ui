@@ -765,6 +765,24 @@ async def check_success(page, session: EngineSession) -> bool:
     except Exception:
         pass
 
+    # GUARD 2: Se botão "Finalizar Compra" ainda está visível, NÃO é sucesso
+    try:
+        finalizar_btns = [
+            'button:has-text("Finalizar Compra")', 'button:has-text("Finalizar compra")',
+            'button:has-text("FINALIZAR COMPRA")', 'button:has-text("Gerar Pix")',
+            'button:has-text("GERAR PIX")',
+        ]
+        for sel in finalizar_btns:
+            try:
+                el = page.locator(sel).first
+                if await el.is_visible(timeout=150):
+                    session.add_log(f"  ⛔ Botão '{sel[19:-2]}' ainda visível — não é sucesso ainda", "info")
+                    return False
+            except Exception:
+                continue
+    except Exception:
+        pass
+
     # PRIMEIRO: verifica se a URL mudou para página de sucesso/pagamento
     current_url = page.url.lower()
     if any(k in current_url for k in ['/order/', '/obrigado', '/thankyou', '/thank-you', '/success', '/payment/', '/pix']):

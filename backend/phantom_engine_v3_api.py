@@ -297,30 +297,69 @@ async def universal_click_button(page, session: EngineSession, etapa: int) -> bo
     """
     Clica no botao de avancar/finalizar da etapa atual.
     Estrategia otimizada: busca rapida por texto, depois fallback.
+    Etapa-aware: na etapa de pagamento (CPF visível), prioriza "Finalizar Compra" e ignora "Ir para Pagamento".
     """
-    # Textos ordenados por prioridade (checkouts Texano + Imperio + genéricos)
-    button_texts = [
-        # Finalizacao
-        "Gerar Pix", "GERAR PIX",
-        "Finalizar compra", "FINALIZAR COMPRA",
-        "Finalizar pedido", "FINALIZAR PEDIDO",
-        "Comprar agora", "COMPRAR AGORA",
-        "Pagar agora", "PAGAR AGORA",
-        "Concluir compra", "CONCLUIR COMPRA",
-        "Confirmar pedido", "CONFIRMAR PEDIDO",
-        "Gerar Boleto", "GERAR BOLETO",
-        # Navegacao
-        "Ir para Pagamento", "IR PARA PAGAMENTO", "Ir para pagamento",
-        "Ir para o pagamento", "IR PARA O PAGAMENTO",
-        "Escolher frete", "ESCOLHER FRETE", "Escolher Frete",
-        "Ir para entrega", "IR PARA ENTREGA",
-        # Genéricos
-        "CONTINUAR", "Continuar", "Continue",
-        "Próximo", "PRÓXIMO", "Proximo", "PROXIMO",
-        "Avançar", "AVANÇAR", "Avancar",
-        "Prosseguir", "PROSSEGUIR",
-        "Next", "NEXT",
-    ]
+    # Detecta se estamos na etapa de pagamento (CPF já visível/preenchido)
+    is_payment_step = False
+    try:
+        is_payment_step = await page.evaluate("""() => {
+            const inputs = document.querySelectorAll('input');
+            for (const inp of inputs) {
+                const id = (inp.id || '').toLowerCase();
+                const name = (inp.name || '').toLowerCase();
+                const ph = (inp.placeholder || '').toLowerCase();
+                if ((id.includes('document') || id.includes('cpf') || name.includes('cpf') || ph.includes('000.000.000'))
+                    && inp.getBoundingClientRect().width > 0) {
+                    return true;
+                }
+            }
+            return false;
+        }""")
+    except Exception:
+        pass
+
+    if is_payment_step:
+        # Na etapa de pagamento: SÓ botões de finalização (nunca "Ir para Pagamento")
+        button_texts = [
+            "Gerar Pix", "GERAR PIX",
+            "Finalizar compra", "FINALIZAR COMPRA",
+            "Finalizar pedido", "FINALIZAR PEDIDO",
+            "Pagar agora", "PAGAR AGORA",
+            "Concluir compra", "CONCLUIR COMPRA",
+            "Confirmar pedido", "CONFIRMAR PEDIDO",
+            "Gerar Boleto", "GERAR BOLETO",
+            "Comprar agora", "COMPRAR AGORA",
+        ]
+        # Scroll down para revelar botões de finalização
+        try:
+            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            await asyncio.sleep(0.3)
+        except Exception:
+            pass
+    else:
+        # Textos ordenados por prioridade (checkouts Texano + Imperio + genéricos)
+        button_texts = [
+            # Finalizacao
+            "Gerar Pix", "GERAR PIX",
+            "Finalizar compra", "FINALIZAR COMPRA",
+            "Finalizar pedido", "FINALIZAR PEDIDO",
+            "Comprar agora", "COMPRAR AGORA",
+            "Pagar agora", "PAGAR AGORA",
+            "Concluir compra", "CONCLUIR COMPRA",
+            "Confirmar pedido", "CONFIRMAR PEDIDO",
+            "Gerar Boleto", "GERAR BOLETO",
+            # Navegacao
+            "Ir para Pagamento", "IR PARA PAGAMENTO", "Ir para pagamento",
+            "Ir para o pagamento", "IR PARA O PAGAMENTO",
+            "Escolher frete", "ESCOLHER FRETE", "Escolher Frete",
+            "Ir para entrega", "IR PARA ENTREGA",
+            # Genéricos
+            "CONTINUAR", "Continuar", "Continue",
+            "Próximo", "PRÓXIMO", "Proximo", "PROXIMO",
+            "Avançar", "AVANÇAR", "Avancar",
+            "Prosseguir", "PROSSEGUIR",
+            "Next", "NEXT",
+        ]
 
     # ─── Estrategia 1: getByRole('button') — mais confiavel e rapido ───
     for text in button_texts:
@@ -1138,12 +1177,13 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                     return "seguro." in u and "/checkout/z-" in u
 
                 def _detect_checkout_platform(url: str) -> str:
-                    """Detecta a plataforma do checkout: CORVEX, Zedy, ou unknown."""
+                    """Detecta a plataforma do checkout: Zedy, CORVEX, ou unknown."""
                     u = (url or "").lower()
-                    if "pediidomercadopago" in u or "pedidomercadopago" in u:
-                        return "CORVEX"
+                    # Prioridade: se tem seguro.*/checkout/z-* → é Zedy (mesmo em pediidomercadopago)
                     if _is_zedy_checkout(u):
                         return "Zedy"
+                    if "pediidomercadopago" in u or "pedidomercadopago" in u:
+                        return "CORVEX"
                     return "unknown"
 
                 def _is_woo_bridge(url: str) -> bool:
@@ -1351,12 +1391,13 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
             # Detecta plataforma para ajustes de comportamento
             checkout_platform = "unknown"
             current_checkout_url = page.url.lower()
-            if "pediidomercadopago" in current_checkout_url or "pedidomercadopago" in current_checkout_url:
-                checkout_platform = "CORVEX"
-                session.add_log("🏷️ Plataforma: CORVEX (pediidomercadopago.com)", "info")
-            elif "seguro." in current_checkout_url and "/checkout/z-" in current_checkout_url:
+            # Prioridade: seguro.*/checkout/z-* = Zedy (mesmo em pediidomercadopago)
+            if "seguro." in current_checkout_url and "/checkout/z-" in current_checkout_url:
                 checkout_platform = "Zedy"
                 session.add_log("🏷️ Plataforma: Zedy", "info")
+            elif "pediidomercadopago" in current_checkout_url or "pedidomercadopago" in current_checkout_url:
+                checkout_platform = "CORVEX"
+                session.add_log("🏷️ Plataforma: CORVEX (pediidomercadopago.com)", "info")
 
             addr = get_random_address()
             cpf_digits = user_data["cpf"].replace(".", "").replace("-", "").replace(" ", "")
@@ -2205,6 +2246,14 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 last_field_set = current_field_set
 
                 # 4. Elementos interativos (radios, selects, PIX, frete)
+                # Se CPF já foi preenchido, scroll down para revelar PIX e botão de finalização
+                if filled and 'cpf' in filled:
+                    try:
+                        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                        await asyncio.sleep(0.3)
+                        session.add_log("  📜 Scroll para revelar PIX/Finalizar...", "info")
+                    except Exception:
+                        pass
                 radios_done = await handle_interactive_elements()
 
                 # 5. Pausa humana

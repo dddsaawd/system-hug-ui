@@ -2246,6 +2246,14 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 last_field_set = current_field_set
 
                 # 4. Elementos interativos (radios, selects, PIX, frete)
+                # Se CPF já foi preenchido, scroll down para revelar PIX e botão de finalização
+                if filled and 'cpf' in filled:
+                    try:
+                        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                        await asyncio.sleep(0.3)
+                        session.add_log("  📜 Scroll para revelar PIX/Finalizar...", "info")
+                    except Exception:
+                        pass
                 radios_done = await handle_interactive_elements()
 
                 # 5. Pausa humana

@@ -2210,12 +2210,13 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                 # 5. Pausa humana
                 await asyncio.sleep(random.uniform(0.15, 0.3))
 
-                # 6. Decidir se deve clicar botão
-                # Só clica se: preencheu algo OU interagiu com elementos OU está preso nos mesmos campos
+                # 6. Decidir se deve clicar botão — CÉREBRO ADAPTATIVO
+                # Regra universal: se preencheu algo, interagiu, ou está preso → tenta avançar
                 should_click = bool(filled) or radios_done or consecutive_same_fields >= 2
-                if not should_click and checkout_platform == "CORVEX" and stale_count >= 1:
+                # ADAPTATIVO: qualquer plataforma (não só CORVEX) tenta avançar quando stale
+                if not should_click and stale_count >= 1:
                     if await has_primary_action_button():
-                        session.add_log("  🔁 CORVEX sem progresso — tentando avançar pelo botão visível", "info")
+                        session.add_log("  🧠 Adaptativo: botão visível sem progresso — tentando avançar", "info")
                         should_click = True
 
                 clicked = False
@@ -2261,25 +2262,69 @@ async def run_checkout_session(session: EngineSession, proxy: str, user_data: di
                                 }""")
                                 if errors:
                                     session.add_log(f"  ❌ Erros na página: {errors}", "error")
+                                    # 🧠 ADAPTATIVO: tenta corrigir erros de validação automaticamente
+                                    for err_msg in errors:
+                                        err_lower = err_msg.lower()
+                                        # Campo obrigatório vazio → tenta preencher
+                                        if "obrigat" in err_lower or "required" in err_lower or "preencha" in err_lower:
+                                            session.add_log("  🧠 Tentando preencher campos obrigatórios faltantes...", "info")
+                                            # Re-scan com foco em campos vazios obrigatórios
+                                            try:
+                                                empty_required = await page.evaluate("""() => {
+                                                    const inputs = document.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), select, textarea');
+                                                    const empty = [];
+                                                    for (const inp of inputs) {
+                                                        const rect = inp.getBoundingClientRect();
+                                                        if (rect.width < 30 || rect.height < 10) continue;
+                                                        const val = (inp.value || '').trim();
+                                                        if (!val) {
+                                                            const label = inp.labels?.[0]?.textContent?.trim() || '';
+                                                            const ph = inp.placeholder || '';
+                                                            const name = inp.name || inp.id || '';
+                                                            empty.push({name, label, placeholder: ph, type: inp.type || 'text'});
+                                                        }
+                                                    }
+                                                    return empty.slice(0, 5);
+                                                }""")
+                                                if empty_required:
+                                                    session.add_log(f"  🧠 Campos vazios detectados: {[e.get('name') or e.get('label') for e in empty_required]}", "info")
+                                            except Exception:
+                                                pass
+                                        # Número inválido / formato errado → tenta reformatar
+                                        if "número" in err_lower or "inválid" in err_lower or "invalid" in err_lower:
+                                            session.add_log("  🧠 Erro de validação detectado — próximo scan tentará corrigir", "info")
                             except Exception:
                                 pass
                             await asyncio.sleep(random.uniform(0.3, 0.6))
 
-                # 8. Detecção de progresso
+                # 8. Detecção de progresso — CÉREBRO ADAPTATIVO
                 any_action = bool(filled) or radios_done or clicked
                 if not any_action:
                     stale_count += 1
                     session.add_log(f"  Sem acao possivel (stale #{stale_count})", "info")
-                    if stale_count >= 4:
+                    if stale_count >= 5:
                         session.add_log("  Sem progresso. Encerrando.", "error")
                         break
-                    # Scroll down para revelar campos escondidos
+                    # 🧠 Adaptativo: scroll + fallback inteligente
                     if stale_count >= 2:
                         try:
                             await page.evaluate("window.scrollBy(0, 300)")
                             session.add_log("  📜 Scroll para revelar campos...", "info")
                         except Exception:
                             pass
+                    # 🧠 Adaptativo stale_count==3: tenta clicar qualquer botão primário mesmo sem ter preenchido
+                    if stale_count == 3:
+                        session.add_log("  🧠 Adaptativo: tentando forçar clique em botão primário...", "info")
+                        pre_click_fp = await get_dom_fingerprint()
+                        force_clicked = await universal_click_button(page, session, loop_num)
+                        if force_clicked:
+                            transitioned = await wait_for_step_transition(pre_click_fp)
+                            if transitioned:
+                                step_number += 1
+                                consecutive_same_fields = 0
+                                last_field_set = set()
+                                stale_count = 0
+                                continue
                     await asyncio.sleep(0.5)
                     continue
                 else:
